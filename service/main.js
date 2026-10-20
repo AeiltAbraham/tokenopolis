@@ -2,7 +2,7 @@
 // initial city; then it ticks on an interval and immediately when a `refresh.request` poke appears
 // (written by the status hook). Never exits on a tick error. The CLI entry wires signals.
 
-import { watch, unlink, existsSync } from 'node:fs'
+import { watch, unlink, existsSync, writeFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readStats as realReadStats } from '../src/stats.js'
@@ -11,6 +11,8 @@ import { writeArtifact } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
 import { tick } from '../src/tick.js'
 import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/claude-stats.js'
+import { startCityServer } from '../src/server.js'
+import { runRandomAct } from '../bin/random-act.js'
 
 const randomSeed = () => (Math.floor(Math.random() * 0xffffffff) >>> 0)
 
@@ -70,12 +72,44 @@ export function startService({
     /* fs.watch unsupported here — the interval covers refreshes */
   }
 
+  // Local bridge: serve the city on localhost and let its "A Random Act" button POST /act. The URL is
+  // written to <dir>/endpoint so the "Open Tokenopolis" action opens the interactive page, not the file.
+  const endpointPath = join(dir, 'endpoint')
+  let cityServer
+  try {
+    cityServer = startCityServer({
+      dir,
+      runAct: () => runRandomAct({ dir, open: () => {}, nowIso, config }),
+      onReady: (url) => {
+        try {
+          writeFileSync(endpointPath, url, { mode: 0o600 })
+        } catch {
+          /* best effort — the action falls back to opening the file */
+        }
+        logLine(dir, `city server listening at ${url}`, nowIso)
+      },
+      onFail: (e) => logLine(dir, `city server error: ${e && e.message}`, nowIso),
+    })
+  } catch (e) {
+    logLine(dir, `city server failed to start: ${e && e.message}`, nowIso)
+  }
+
   return {
     run,
     stop() {
       clearInterval(interval)
       try {
         watcher && watcher.close()
+      } catch {
+        /* ignore */
+      }
+      try {
+        cityServer && cityServer.close()
+      } catch {
+        /* ignore */
+      }
+      try {
+        unlinkSync(endpointPath) // remove the stale URL so the action falls back to the file
       } catch {
         /* ignore */
       }

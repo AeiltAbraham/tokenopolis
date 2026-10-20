@@ -44,6 +44,15 @@ test('openCity returns false (and warns) when no city exists yet', () => {
   assert.equal(openCity(tmp(), 'darwin', () => ({ unref() {} })), false)
 })
 
+test('openCity opens the live server URL when an endpoint file is present', () => {
+  const dir = tmp()
+  writeFileSync(join(dir, 'city.html'), '<html></html>')
+  writeFileSync(join(dir, 'endpoint'), 'http://127.0.0.1:54321')
+  const calls = []
+  openCity(dir, 'darwin', (c, a) => (calls.push([c, a]), { unref() {} }))
+  assert.deepEqual(calls[0], ['open', ['http://127.0.0.1:54321']], 'opens the local server URL, not the file')
+})
+
 test('every manifest command points at a file that exists', () => {
   const manifest = parse(readFileSync(join(root, 'cornercase-plugin.toml'), 'utf8'))
   const entries = [...(manifest.service ?? []), ...(manifest.events ?? []), ...(manifest.actions ?? [])]

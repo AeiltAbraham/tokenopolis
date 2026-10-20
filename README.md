@@ -28,6 +28,10 @@ working on:
 The two sources are summed, and **nothing is ever sent anywhere** — it all stays on your machine.
 (cornercase-run agents live under cornercase's own account dirs, so the two don't double-count.)
 
+The city is served by a small HTTP server **bound to `127.0.0.1` only** (never a public interface),
+so the in-city **A Random Act** button can trigger an act. It exposes just the city page and a
+`POST /act`; cross-origin requests are refused. Nothing is reachable from outside your machine.
+
 ## Install
 
 Once published, enable it from the cornercase marketplace (plugins carrying the
@@ -46,6 +50,11 @@ Then open your city from the **Open Tokenopolis** action (workspace or pane menu
   re-renders the city into a self-contained `city.html`.
 - A `status` **hook** pokes the service to refresh promptly after agent activity.
 - City state persists in `CORNERCASE_PLUGIN_STATE` and survives reinstalls.
+- **A Random Act** (once an hour): a button in the city rolls a 50-outcome deck — boons grow and
+  prettify it, disasters (meteor, quake, flood, …) shrink and wreck it — with a named banner and a
+  short animation. The service serves the city on `127.0.0.1` so the button can fire the act; off
+  cooldown it glows "ready", otherwise it shows a live countdown. (Opened as a shared/static file
+  the button falls back to the ⋯ menu's **A Random Act** action.)
 
 See `spec.md` / `clarify.md` / `plan.md` for the full design. Build status: `progress.md`.
 

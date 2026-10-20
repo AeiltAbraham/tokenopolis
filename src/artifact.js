@@ -112,8 +112,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 <aside id="hud">
   <h1>${esc(readout.cityName)}</h1>
   <div class="scale">${esc(readout.scaleName)} · <span class="cond">${esc(readout.condition)}</span></div>
-  <button id="act-btn" class="act-btn" type="button" disabled title="Roll from the cornercase ⋯ menu → A Random Act">A Random Act</button>
-  <div class="act-hint">roll it from the ⋯ menu</div>
+  <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
+  <div class="act-hint">click to roll</div>
   <dl>
     <dt>Population</dt><dd>${fmt(readout.population)}</dd>
     <dt>Treasury</dt><dd>§${fmt(readout.treasury)}</dd>
@@ -242,10 +242,24 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     if (rem > 0) { actBtn.disabled = true; actBtn.className = 'act-btn'; actBtn.textContent = '⏳ A Random Act · ' + fmtDur(rem); }
     else { actBtn.disabled = false; actBtn.className = 'act-btn ready'; actBtn.textContent = '⚡ A Random Act · ready'; }
   }
+  function actFallback() { if (actHint) { actHint.textContent = 'open from the ⋯ menu to roll'; actHint.style.opacity = '.9'; } }
   if (actBtn && actBtn.addEventListener) {
     actBtn.addEventListener('click', function () {
       if (actBtn.disabled) return;
-      if (actHint) { actHint.textContent = 'Open the ⋯ menu → “A Random Act” to roll'; actHint.style.opacity = '.9'; }
+      actBtn.disabled = true; actBtn.className = 'act-btn'; actBtn.textContent = '· rolling ·';
+      if (typeof fetch !== 'function') { actFallback(); updateActBtn(); return; }
+      // Same-origin POST works when the city is served by the plugin's local server; reload shows the
+      // fresh render (animation + new cooldown). When opened as a file/shared artifact, fetch fails →
+      // fall back to the menu hint.
+      fetch('/act', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (res && res.ok) { if (typeof location !== 'undefined' && location.reload) location.reload(); return; }
+          if (res && res.reason === 'cooldown') { if (actHint) actHint.textContent = 'on cooldown — ' + (res.minutesLeft || 0) + 'm left'; }
+          else { actFallback(); }
+          updateActBtn();
+        })
+        .catch(function () { actFallback(); updateActBtn(); });
     });
   }
 
