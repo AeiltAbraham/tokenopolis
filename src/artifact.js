@@ -11,6 +11,7 @@ import { sceneFor } from './render/scene.js'
 import { economyFor } from './sim/economy.js'
 import { scaleName } from './sim/scale.js'
 import { effectiveBuilt } from './sim/condition.js'
+import { COOLDOWN_MS } from './acts.js'
 import { DEFAULT_CONFIG } from './config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -48,7 +49,9 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   // when the render was triggered BY the act (fresh), so a routine re-render doesn't replay it.
   const act = state.acts?.last ?? null
   const renderedAt = state.render?.lastRenderedAt ?? null
-  const data = { scene, theme: config.theme, readout, act, renderedAt }
+  // The cooldown stamp + window drive the always-visible "A Random Act" button's live countdown.
+  const lastActAt = state.acts?.lastActAt ?? null
+  const data = { scene, theme: config.theme, readout, act, renderedAt, lastActAt, cooldownMs: COOLDOWN_MS }
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -86,6 +89,17 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   #hud dt { opacity: .65; }
   #hud dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   #hud .theme { margin-top: 14px; opacity: .55; font-size: 12px; }
+  .act-btn {
+    width: 100%; margin: 0 0 4px; padding: 11px 14px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.14); font: 600 14px/1.2 ui-sans-serif, system-ui, sans-serif;
+    color: #e8ecf2; background: linear-gradient(180deg,#2a3550,#1b2236);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-variant-numeric: tabular-nums; transition: opacity .25s, background .25s, border-color .25s;
+  }
+  .act-btn.ready { cursor: pointer; background: linear-gradient(180deg,#2f6bff,#1f49c7); border-color: #6f9bff; animation: actpulse 2.2s infinite; }
+  .act-btn[disabled] { cursor: default; opacity: .62; color: #aab4c4; background: linear-gradient(180deg,#242a38,#1a1f2b); border-color: rgba(255,255,255,.1); animation: none; }
+  @keyframes actpulse { 0%{box-shadow:0 0 0 0 rgba(90,150,255,.45)} 70%{box-shadow:0 0 0 10px rgba(90,150,255,0)} 100%{box-shadow:0 0 0 0 rgba(90,150,255,0)} }
+  .act-hint { margin: 6px 0 2px; font-size: 11px; opacity: .5; text-align: center; }
   @media (max-width: 640px) { #city { flex-basis: 100%; } }
 </style>
 </head>
@@ -98,6 +112,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 <aside id="hud">
   <h1>${esc(readout.cityName)}</h1>
   <div class="scale">${esc(readout.scaleName)} · <span class="cond">${esc(readout.condition)}</span></div>
+  <button id="act-btn" class="act-btn" type="button" disabled title="Roll from the cornercase ⋯ menu → A Random Act">A Random Act</button>
+  <div class="act-hint">roll it from the ⋯ menu</div>
   <dl>
     <dt>Population</dt><dd>${fmt(readout.population)}</dd>
     <dt>Treasury</dt><dd>§${fmt(readout.treasury)}</dd>
@@ -212,9 +228,32 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     if (typeof requestAnimationFrame === 'function') startFx(act);
   }
 
+  // ---- Always-visible "A Random Act" button with a live cooldown countdown. ----
+  var actBtn = document.getElementById('act-btn'), actHint = document.querySelector && document.querySelector('.act-hint');
+  function fmtDur(ms) {
+    var s = Math.ceil(ms / 1000), m = Math.floor(s / 60); s = s % 60;
+    if (m >= 60) { var hr = Math.floor(m / 60); return hr + 'h ' + (m % 60) + 'm'; }
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function updateActBtn() {
+    if (!actBtn) return;
+    var last = DATA.lastActAt ? Date.parse(DATA.lastActAt) : NaN;
+    var rem = isNaN(last) ? 0 : Math.max(0, last + (DATA.cooldownMs || 0) - Date.now());
+    if (rem > 0) { actBtn.disabled = true; actBtn.className = 'act-btn'; actBtn.textContent = '⏳ A Random Act · ' + fmtDur(rem); }
+    else { actBtn.disabled = false; actBtn.className = 'act-btn ready'; actBtn.textContent = '⚡ A Random Act · ready'; }
+  }
+  if (actBtn && actBtn.addEventListener) {
+    actBtn.addEventListener('click', function () {
+      if (actBtn.disabled) return;
+      if (actHint) { actHint.textContent = 'Open the ⋯ menu → “A Random Act” to roll'; actHint.style.opacity = '.9'; }
+    });
+  }
+
   frame();
   updateDecay();
   setupActs();
+  updateActBtn();
+  if (typeof setInterval === 'function') setInterval(updateActBtn, 1000);
   if (typeof requestAnimationFrame === 'function') {
     var lastT = 0;
     (function loop(t) { if (t - lastT > 140) { frame(); updateDecay(); lastT = t; } requestAnimationFrame(loop); })(0);

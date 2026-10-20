@@ -44,6 +44,16 @@ test('HUD shows the economy readout, lifetime panel, name and theme', () => {
   assert.ok(html.includes('theme: coastal'), 'theme shown')
 })
 
+test('the A Random Act button is always present and carries live cooldown data', () => {
+  const base = makeState()
+  const withCd = { ...base, acts: { usedIds: ['tsunami'], lastActAt: '2026-10-19T00:30:00.000Z', last: null } }
+  const html = buildArtifactHtml(withCd, DEFAULT_CONFIG)
+  assert.ok(html.includes('id="act-btn"'), 'the button is rendered')
+  const data = JSON.parse(html.match(/<script id="city-data"[^>]*>([\s\S]*?)<\/script>/)[1])
+  assert.ok(data.cooldownMs > 0, 'cooldown window embedded for the countdown')
+  assert.equal(data.lastActAt, '2026-10-19T00:30:00.000Z', 'cooldown stamp embedded')
+})
+
 test('city.html stays ≤ 300 KB and writeArtifact writes it', () => {
   const dir = tmp()
   const { path, bytes } = writeArtifact(makeState(), DEFAULT_CONFIG, dir)

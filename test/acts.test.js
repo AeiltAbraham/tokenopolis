@@ -138,7 +138,7 @@ test('runRandomAct on cooldown: no-op that reports the wait; state unchanged', (
   assert.equal(res.ok, false)
   assert.equal(res.reason, 'cooldown')
   assert.ok(res.minutesLeft > 0 && res.minutesLeft <= 30)
-  assert.equal(opened, false, 'cooldown does not open anything')
+  assert.equal(opened, true, 'cooldown still opens the city so the countdown button is visible')
   assert.deepEqual(loadState(dir).acts, s.acts, 'state untouched on cooldown')
 })
 

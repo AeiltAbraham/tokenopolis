@@ -26,6 +26,7 @@ export function runRandomAct({ dir, nowIso = () => new Date().toISOString(), rng
     const mins = Math.ceil(msUntilNextAct(acts, nowMs) / 60000)
     logLine(dir, `random-act: on cooldown (${mins}m left)`)
     console.error(`Tokenopolis: the city is still recovering — next Random Act in ~${mins}m.`)
+    open(dir) // still open the city so the user sees the button counting down
     return { ok: false, reason: 'cooldown', minutesLeft: mins }
   }
   const acted = performAct({ ...state, acts }, now, rng)
