@@ -33,6 +33,8 @@ function recCtx() {
     save: () => {},
     restore: () => {},
     translate: () => {},
+    createLinearGradient: () => ({ addColorStop() {} }),
+    createRadialGradient: () => ({ addColorStop() {} }),
   }
 }
 
@@ -101,7 +103,7 @@ test('lit windows animate across ticks (guards the twinkle, not just the crane)'
   const windows = (tick) => {
     const c = recCtx()
     drawCity(c, lively, 'temperate', tick)
-    return c.ops.filter((o) => o[0] === 'fillRect' && o[3] === 3 && o[4] === 3) // 3×3 window glows
+    return c.ops.filter((o) => o[0] === 'fillRect' && o[3] === 6 && o[4] === 7) // lit-window bloom
   }
   assert.notDeepEqual(windows(0), windows(1), 'the window lit-set must change each tick')
 })

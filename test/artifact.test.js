@@ -74,6 +74,7 @@ test('the inlined bundle actually runs: boot script executes under node:vm and d
       get(_t, prop) {
         if (prop === 'canvas') return { width: 960, height: 640 }
         if (prop === 'fill') return () => { fills++ }
+        if (prop === 'createLinearGradient' || prop === 'createRadialGradient') return () => ({ addColorStop() {} })
         return () => {}
       },
       set() { return true },

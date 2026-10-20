@@ -1,8 +1,8 @@
-// Isometric pixel renderer. Draws a scene (from scene.js) onto a canvas 2D context — in the browser
-// inside the artifact, and under a recording-stub ctx in tests. Only import is ./themes.js (both are
-// inlined into the artifact). Geometry depends on the scene + tick ONLY (never the palette), so the
-// city stays legible with the palette swapped for grayscale; condition shows through STRUCTURE
-// (height, damage cracks, collapsed rubble), not color. Layer order is marked via the optional
+// Isometric renderer. Draws a scene (from scene.js) onto a canvas 2D context — in the browser inside
+// the artifact, and under a recording-stub ctx in tests. Only import is ./themes.js (both are inlined
+// into the artifact). GEOMETRY depends on the scene + tick ONLY (never the palette): colors/gradients
+// are style, so the city stays legible in grayscale and condition shows through STRUCTURE (height,
+// damage cracks, collapsed rubble, lit-window bloom). Layer order is marked via the optional
 // ctx.__layer hook (a no-op in the browser) so tests can assert z-order.
 
 import { resolveTheme } from './themes.js'
@@ -15,8 +15,7 @@ const mark = (ctx, layer) => {
   if (typeof ctx.__layer === 'function') ctx.__layer(layer)
 }
 const iso = (gx, gy, ox, oy) => ({ x: ox + (gx - gy) * (TILE_W / 2), y: oy + (gx + gy) * (TILE_H / 2) })
-// Deterministic "is this window lit this tick" — depends on position + tick (animates when lively).
-// The tick multiplier must be coprime to the modulus or the frame would never change.
+// Deterministic "is this window lit this tick" — coprime tick multiplier so it animates each frame.
 const lit = (gx, gy, f, tick) => (gx * 7 + gy * 13 + f * 17 + tick) % 5 === 0
 
 function shade(hex, amt) {
@@ -27,6 +26,19 @@ function shade(hex, amt) {
   const b = clamp((n & 255) + amt)
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
 }
+const rgba = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`
+}
+const isNight = (hex) => {
+  const n = parseInt(hex.slice(1), 16)
+  return (n >> 16) + ((n >> 8) & 255) + (n & 255) < 320
+}
+const srnd = (a, b) => {
+  let h = ((a * 73856093) ^ (b * 19349663)) >>> 0
+  h ^= h >>> 13
+  return (h >>> 0) % 1000 / 1000
+}
 
 function diamond(ctx, x, y, hw, hh) {
   ctx.beginPath()
@@ -36,6 +48,12 @@ function diamond(ctx, x, y, hw, hh) {
   ctx.lineTo(x - hw, y)
   ctx.closePath()
 }
+function vgrad(ctx, x0, y0, x1, y1, c0, c1) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1)
+  g.addColorStop(0, c0)
+  g.addColorStop(1, c1)
+  return g
+}
 
 export function drawCity(ctx, scene, theme, tick = 0) {
   const p = theme && typeof theme === 'object' ? theme : resolveTheme(theme)
@@ -44,27 +62,50 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   const ox = W / 2
   const oy = H * 0.3
   const stale = (scene.vitality ?? 0) < 0.34
+  const night = isNight(p.sky)
 
-  ctx.fillStyle = p.sky
+  // --- sky (vertical gradient) ---
+  const sky = ctx.createLinearGradient(0, 0, 0, H)
+  sky.addColorStop(0, shade(p.sky, night ? 16 : -40))
+  sky.addColorStop(0.62, p.sky)
+  sky.addColorStop(1, shade(p.sky, night ? -10 : 22))
+  ctx.fillStyle = sky
   ctx.fillRect(0, 0, W, H)
+  if (night) {
+    for (let i = 0; i < 70; i++) {
+      if (srnd(i + tick, 3) > 0.55) {
+        ctx.fillStyle = rgba('#ffffff', 0.5 + 0.4 * srnd(i, 9))
+        ctx.fillRect(Math.floor(srnd(i, 1) * W), Math.floor(srnd(i, 2) * H * 0.5), 1, 1)
+      }
+    }
+  }
 
   mark(ctx, 'underground')
   for (const u of scene.underground) {
-    ctx.fillStyle = shade(p.underground, Math.min(40, u.level * 4))
-    const bandY = oy + scene.footprint.rows * (TILE_H / 2) + u.level * 8
-    ctx.fillRect(ox - u.extent * (TILE_W / 2), bandY, u.extent * TILE_W, 6)
+    const bandY = oy + scene.footprint.rows * (TILE_H / 2) + 10 + u.level * 9
+    const ux = ox - u.extent * (TILE_W / 2)
+    ctx.fillStyle = vgrad(ctx, ox, bandY, ox, bandY + 8, shade(p.underground, 10), shade(p.underground, -22))
+    ctx.fillRect(ux, bandY, u.extent * TILE_W, 8)
+    ctx.fillStyle = rgba(p.accent, 0.5)
+    for (let k = 1; k < u.extent; k += 2) ctx.fillRect(ux + k * TILE_W, bandY + 3, 2, 2)
   }
 
   mark(ctx, 'ground')
   const span = Math.max(scene.footprint.cols, scene.footprint.rows)
-  ctx.fillStyle = p.ground
-  diamond(ctx, ox, oy + span * (TILE_H / 2), span * (TILE_W / 2) + TILE_W, span * (TILE_H / 2) + TILE_H)
+  const gcy = oy + span * (TILE_H / 2)
+  const ghw = span * (TILE_W / 2) + TILE_W
+  const ghh = span * (TILE_H / 2) + TILE_H
+  ctx.fillStyle = shade(p.ground, -48) // plate rim for depth
+  diamond(ctx, ox, gcy + 6, ghw, ghh)
+  ctx.fill()
+  ctx.fillStyle = vgrad(ctx, ox, gcy - ghh, ox, gcy + ghh, shade(p.ground, 16), shade(p.ground, -18))
+  diamond(ctx, ox, gcy, ghw, ghh)
   ctx.fill()
 
   mark(ctx, 'roads')
-  // Roads visibly connect the zones (spec §3); higher infra tiers show as accent pips as they unlock.
   if (scene.infrastructure.roads) {
-    ctx.strokeStyle = p.road
+    ctx.strokeStyle = rgba(p.road, 0.8)
+    ctx.lineWidth = 2
     const n = Math.max(scene.footprint.cols, scene.footprint.rows)
     for (let g = 0; g <= n; g++) {
       const a = iso(g, 0, ox, oy)
@@ -80,9 +121,12 @@ export function drawCity(ctx, scene, theme, tick = 0) {
       ctx.lineTo(d.x, d.y)
       ctx.stroke()
     }
+    ctx.lineWidth = 1
     const tiers = ['power', 'water', 'transit', 'data'].filter((t) => scene.infrastructure[t])
-    ctx.fillStyle = p.accent
-    for (let i = 0; i < tiers.length; i++) ctx.fillRect(8 + i * 10, H - 14, 6, 6)
+    for (let i = 0; i < tiers.length; i++) {
+      ctx.fillStyle = p.accent
+      ctx.fillRect(10 + i * 11, H - 16, 6, 6)
+    }
   }
 
   mark(ctx, 'buildings')
@@ -90,26 +134,28 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   for (const b of order) drawBuilding(ctx, b, p, ox, oy, tick, stale)
 
   mark(ctx, 'landmarks')
-  for (const l of scene.landmarks) {
-    const { x, y } = iso(l.gx, l.gy, ox, oy)
-    ctx.fillStyle = p.accent
-    diamond(ctx, x, y - 14, 6, 3)
-    ctx.fill()
-  }
+  for (const l of scene.landmarks) drawLandmark(ctx, l, p, ox, oy, tick)
 
   mark(ctx, 'overlay')
-  // A construction crane over the city when it's lively and growing (animates along the jib by tick).
   if (!stale && !scene.ruined) {
-    const cx = ox - 34 + ((tick * 4) % 26)
-    const cy = oy - 4
+    const cx = ox - 30 + ((tick * 4) % 24)
+    const cy = oy - 6
     ctx.strokeStyle = p.accent
+    ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(cx, cy)
-    ctx.lineTo(cx, cy - 36) // mast
-    ctx.lineTo(cx + 26, cy - 36) // jib
-    ctx.lineTo(cx + 26, cy - 30) // hook drop
+    ctx.lineTo(cx, cy - 38) // mast
+    ctx.lineTo(cx + 26, cy - 38) // jib
+    ctx.lineTo(cx + 26, cy - 31) // hook
     ctx.stroke()
+    ctx.lineWidth = 1
   }
+  // vignette for mood/depth
+  const vg = ctx.createRadialGradient(ox, oy + H * 0.18, H * 0.18, ox, oy + H * 0.18, H * 0.8)
+  vg.addColorStop(0, 'rgba(0,0,0,0)')
+  vg.addColorStop(1, night ? 'rgba(0,0,0,0.5)' : 'rgba(8,10,18,0.26)')
+  ctx.fillStyle = vg
+  ctx.fillRect(0, 0, W, H)
 }
 
 function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
@@ -118,16 +164,33 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
   const hh = TILE_H / 2
   const h = b.height * FLOOR_H
 
+  // soft drop shadow (depth)
+  ctx.fillStyle = rgba('#000000', 0.18)
+  diamond(ctx, x + 5, y + 4, hw * 0.9, hh * 0.9)
+  ctx.fill()
+
   if (b.zone === 'park') {
-    ctx.fillStyle = p.zone.park
+    ctx.fillStyle = vgrad(ctx, x, y - hh, x, y + hh, shade(p.zone.park, 20), shade(p.zone.park, -14))
     diamond(ctx, x, y, hw, hh)
     ctx.fill()
+    for (const [dx, dy] of [[-5, 1], [5, -2]]) {
+      ctx.fillStyle = shade(p.zone.park, -48)
+      ctx.fillRect(x + dx - 1, y + dy - 6, 2, 6)
+      ctx.fillStyle = shade(p.zone.park, -22)
+      ctx.beginPath()
+      ctx.arc(x + dx, y + dy - 7, 4, 0, 7)
+      ctx.fill()
+      ctx.fillStyle = shade(p.zone.park, 8)
+      ctx.beginPath()
+      ctx.arc(x + dx - 1, y + dy - 8, 2, 0, 7)
+      ctx.fill()
+    }
     return
   }
 
   const base = p.zone[b.zone] ?? p.zone.R
-  // left face
-  ctx.fillStyle = shade(base, -22)
+  // left (sunlit) face
+  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, 14), shade(base, -24))
   ctx.beginPath()
   ctx.moveTo(x - hw, y)
   ctx.lineTo(x, y + hh)
@@ -135,8 +198,8 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
   ctx.lineTo(x - hw, y - h)
   ctx.closePath()
   ctx.fill()
-  // right face
-  ctx.fillStyle = shade(base, -44)
+  // right (shadow) face
+  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, -30), shade(base, -56))
   ctx.beginPath()
   ctx.moveTo(x + hw, y)
   ctx.lineTo(x, y + hh)
@@ -145,40 +208,90 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
   ctx.closePath()
   ctx.fill()
   // roof
-  ctx.fillStyle = p.roof
+  ctx.fillStyle = vgrad(ctx, x, y - h - hh, x, y - h + hh, shade(p.roof, 18), shade(p.roof, -12))
   diamond(ctx, x, y - h, hw, hh)
   ctx.fill()
+  // front vertical edge highlight
+  ctx.strokeStyle = rgba('#ffffff', 0.12)
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(x, y + hh)
+  ctx.lineTo(x, y + hh - h)
+  ctx.stroke()
 
-  // lit windows (glow geometry) — only when lively, so animation shows in geometry; still when stale
-  if (!stale && b.height > 0 && !b.collapsed) {
-    ctx.fillStyle = p.window
+  // windows: a dim base grid always; lit windows add a glow + bloom (the animated geometry)
+  if (b.height > 0 && !b.collapsed) {
     for (let f = 0; f < b.height; f++) {
-      if (lit(b.gx, b.gy, f, tick)) {
-        const wy = y - f * FLOOR_H - 6
-        ctx.fillRect(x - hw + 4, wy, 3, 3)
-        ctx.fillRect(x + hw - 7, wy, 3, 3)
+      const wy = y - f * FLOOR_H - 6
+      for (let c = 0; c < 2; c++) {
+        const lx = x - hw + 6 + c * 8
+        const rx = x + 4 + c * 8
+        ctx.fillStyle = rgba(shade(base, -64), 0.85)
+        ctx.fillRect(lx, wy, 2, 3)
+        ctx.fillStyle = rgba(shade(base, -84), 0.85)
+        ctx.fillRect(rx, wy, 2, 3)
+        if (!stale && lit(b.gx + c, b.gy, f, tick)) {
+          ctx.fillStyle = p.window
+          ctx.fillRect(lx, wy, 2, 3)
+          ctx.fillStyle = rgba(p.window, 0.22)
+          ctx.fillRect(lx - 2, wy - 2, 6, 7) // bloom
+        }
       }
     }
   }
 
-  // structural damage: a crack (independent of palette geometry)
+  // damage cracks
   if (b.damage > 0.3) {
-    ctx.strokeStyle = p.damage
+    ctx.strokeStyle = rgba(p.damage, 0.85)
     ctx.beginPath()
     ctx.moveTo(x, y + hh - h)
-    ctx.lineTo(x - hw * 0.5, y - h * 0.5)
+    ctx.lineTo(x - hw * 0.4, y - h * 0.45)
+    ctx.lineTo(x - hw * 0.1, y - h * 0.18)
     ctx.stroke()
   }
 
-  // collapsed → rubble silhouette
+  // collapsed → rubble
   if (b.collapsed) {
-    ctx.fillStyle = p.rubble
+    ctx.fillStyle = vgrad(ctx, x, y - hh, x, y + hh, shade(p.rubble, 12), shade(p.rubble, -20))
     ctx.beginPath()
     ctx.moveTo(x - hw, y)
     ctx.lineTo(x, y + hh)
     ctx.lineTo(x + hw, y)
-    ctx.lineTo(x, y - hh * 0.4)
+    ctx.lineTo(x, y - hh * 0.5)
     ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = shade(p.rubble, -32)
+    for (let d = 0; d < 3; d++) ctx.fillRect(x - hw * 0.5 + d * 6, y - 1 - d, 3, 2)
+  }
+}
+
+function drawLandmark(ctx, l, p, ox, oy, tick) {
+  const { x, y } = iso(l.gx, l.gy, ox, oy)
+  ctx.fillStyle = p.accent
+  if (l.kind === 'monument') {
+    ctx.beginPath()
+    ctx.moveTo(x, y - 30)
+    ctx.lineTo(x - 4, y)
+    ctx.lineTo(x + 4, y)
+    ctx.closePath()
+    ctx.fill()
+  } else if (l.kind === 'tower') {
+    ctx.fillRect(x - 2, y - 34, 4, 34)
+    ctx.fillStyle = tick % 2 === 0 ? '#ff5a5a' : rgba('#ff5a5a', 0.3)
+    ctx.beginPath()
+    ctx.arc(x, y - 36, 2, 0, 7)
+    ctx.fill()
+  } else if (l.kind === 'stadium') {
+    ctx.beginPath()
+    ctx.arc(x, y - 6, 8, 0, 7)
+    ctx.fill()
+    ctx.fillStyle = shade(p.accent, -44)
+    ctx.beginPath()
+    ctx.arc(x, y - 6, 5, 0, 7)
+    ctx.fill()
+  } else {
+    ctx.beginPath()
+    ctx.arc(x, y - 8, 5, 0, 7)
     ctx.fill()
   }
 }
