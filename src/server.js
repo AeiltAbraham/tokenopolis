@@ -57,13 +57,26 @@ export function createCityServer({ dir, runAct }) {
   })
 }
 
-// Bind on an ephemeral localhost port. onReady(url, server) fires once listening; onFail(err) on error.
-// Returns the server so the caller can close() it. Never binds a public interface.
-export function startCityServer({ dir, runAct, host = '127.0.0.1', onReady, onFail }) {
+// Bind on a STABLE localhost port (default 8420) so the city URL survives service restarts and an
+// open browser tab keeps working — an ephemeral port would change on every restart and break it.
+// Falls back to the next port on a conflict. basePort 0 → ephemeral (used by tests). onReady(url,
+// server) fires once listening; onFail(err) on a non-recoverable error. Never binds a public interface.
+export function startCityServer({ dir, runAct, host = '127.0.0.1', basePort = 8420, maxTries = 20, onReady, onFail }) {
   const server = createCityServer({ dir, runAct })
-  if (onFail) server.on('error', onFail)
-  server.listen(0, host, () => {
+  let port = basePort
+  let tries = 0
+  server.on('error', (e) => {
+    if (e && e.code === 'EADDRINUSE' && port !== 0 && tries < maxTries) {
+      tries += 1
+      port += 1
+      setTimeout(() => server.listen(port, host), 25) // try the next port
+    } else if (onFail) {
+      onFail(e)
+    }
+  })
+  server.on('listening', () => {
     if (onReady) onReady(`http://${host}:${server.address().port}`, server)
   })
+  server.listen(port, host)
   return server
 }

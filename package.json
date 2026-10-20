@@ -1,6 +1,6 @@
 {
   "name": "tokenopolis",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Grow a SimCity-style city as you burn tokens in cornercase.",
   "type": "module",
   "private": true,

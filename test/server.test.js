@@ -8,7 +8,7 @@ import { startCityServer } from '../src/server.js'
 const tmp = () => mkdtempSync(join(tmpdir(), 'tok-srv-'))
 const boot = (dir, runAct) =>
   new Promise((resolve) => {
-    const server = startCityServer({ dir, runAct, onReady: (url) => resolve({ url, server }) })
+    const server = startCityServer({ dir, runAct, basePort: 0, onReady: (url) => resolve({ url, server }) })
   })
 
 test('serves city.html, runs /act once, refuses cross-origin, 404s the rest', async () => {
