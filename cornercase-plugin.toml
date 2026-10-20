@@ -7,16 +7,16 @@ permissions = ["read-stats", "open-file"]
 # Long-running keeper: polls `cornercase stats`, runs the sim, re-renders the city artifact.
 [[service]]
 id = "city-keeper"
-command = ["node", "service/main.js"]
+command = ["sh", "-c", "exec node \"$CORNERCASE_PLUGIN_ROOT/service/main.js\""]
 
 # Agent status changes just poke the keeper (hooks are killed at 60s — real work stays in the service).
 [[events]]
 on = "status"
-command = ["node", "scripts/poke.mjs"]
+command = ["sh", "-c", "exec node \"$CORNERCASE_PLUGIN_ROOT/scripts/poke.mjs\""]
 
 # Open the rendered city.
 [[actions]]
 id = "open-city"
 title = "Open Tokenopolis"
 contexts = ["workspace", "pane"]
-command = ["node", "scripts/open-city.mjs"]
+command = ["sh", "-c", "exec node \"$CORNERCASE_PLUGIN_ROOT/scripts/open-city.mjs\""]
