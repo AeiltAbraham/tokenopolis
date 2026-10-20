@@ -1,5 +1,7 @@
 # Tokenopolis
 
+![A thriving Tokenopolis metropolis — rendered live by the plugin](media/hero.png)
+
 A **cornercase** plugin that turns your token usage into a living city. Start as a tiny low-tech
 village; as you burn tokens across sessions, the city grows — denser zones, taller towers, better
 infrastructure, higher tech, and eventually *underground*. Go quiet and the economy goes stale:
@@ -91,6 +93,18 @@ Tokenopolis is **public and open to contributions — especially styling.** Grea
 Before a PR: `npm install` (dev-only TOML parser) then `node --test` — the suite is fast and
 zero-config. Keep the simulation deterministic and the artifact self-contained (no network, no
 external references). Open issues / PRs at <https://github.com/AeiltAbraham/tokenopolis>.
+
+## Art direction
+
+The hero above is what the plugin **actually renders** — a lightweight, animated, self-contained
+vector city (~10 KB, no assets). Separately, we're exploring a hand-drawn pixel-art look with
+AI-generated isometric sprites (Nano Banana / Gemini). This is **concept art, not the current
+output** — a possible future "high-detail" direction:
+
+![Nano Banana sprite concept — a small isometric town](media/concept-town.png)
+
+A full sprite tileset (height variants per zone, ruin/decay states, underground, animation) is a
+real project — contributions toward it are very welcome (see [Contributing](#contributing)).
 
 ## Layout
 
