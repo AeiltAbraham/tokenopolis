@@ -189,6 +189,8 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
   }
 
   const base = p.zone[b.zone] ?? p.zone.R
+  // per-zone roof: warm residential, cool-glass commercial, flat-dark industrial
+  const roofColor = b.zone === 'C' ? shade(p.zone.C, -24) : b.zone === 'I' ? shade(p.zone.I, -36) : p.roof
   // left (sunlit) face
   ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, 14), shade(base, -24))
   ctx.beginPath()
@@ -207,8 +209,8 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
   ctx.lineTo(x + hw, y - h)
   ctx.closePath()
   ctx.fill()
-  // roof
-  ctx.fillStyle = vgrad(ctx, x, y - h - hh, x, y - h + hh, shade(p.roof, 18), shade(p.roof, -12))
+  // roof (per-zone colour)
+  ctx.fillStyle = vgrad(ctx, x, y - h - hh, x, y - h + hh, shade(roofColor, 18), shade(roofColor, -12))
   diamond(ctx, x, y - h, hw, hh)
   ctx.fill()
   // front vertical edge highlight
@@ -218,14 +220,29 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
   ctx.moveTo(x, y + hh)
   ctx.lineTo(x, y + hh - h)
   ctx.stroke()
+  // rooftop detail: antenna on tall towers (red beacon when very tall), vent on industrial
+  if (b.height >= 5) {
+    ctx.strokeStyle = rgba(shade(roofColor, -46), 0.9)
+    ctx.beginPath()
+    ctx.moveTo(x, y - h)
+    ctx.lineTo(x, y - h - 9)
+    ctx.stroke()
+    if (b.height >= 7) {
+      ctx.fillStyle = tick % 2 === 0 ? '#ff5a5a' : rgba('#ff5a5a', 0.3)
+      ctx.fillRect(x - 1, y - h - 10, 2, 2)
+    }
+  } else if (b.zone === 'I') {
+    ctx.fillStyle = shade(roofColor, -22)
+    ctx.fillRect(x - 3, y - h - 3, 6, 3)
+  }
 
   // windows: a dim base grid always; lit windows add a glow + bloom (the animated geometry)
   if (b.height > 0 && !b.collapsed) {
     for (let f = 0; f < b.height; f++) {
       const wy = y - f * FLOOR_H - 6
-      for (let c = 0; c < 2; c++) {
-        const lx = x - hw + 6 + c * 8
-        const rx = x + 4 + c * 8
+      for (let c = 0; c < 3; c++) {
+        const lx = x - hw + 4 + c * 5
+        const rx = x + 3 + c * 5
         ctx.fillStyle = rgba(shade(base, -64), 0.85)
         ctx.fillRect(lx, wy, 2, 3)
         ctx.fillStyle = rgba(shade(base, -84), 0.85)
@@ -233,7 +250,7 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
         if (!stale && lit(b.gx + c, b.gy, f, tick)) {
           ctx.fillStyle = p.window
           ctx.fillRect(lx, wy, 2, 3)
-          ctx.fillStyle = rgba(p.window, 0.22)
+          ctx.fillStyle = rgba(p.window, 0.3)
           ctx.fillRect(lx - 2, wy - 2, 6, 7) // bloom
         }
       }
