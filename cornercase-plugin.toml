@@ -20,3 +20,10 @@ id = "open-city"
 title = "Open Tokenopolis"
 contexts = ["workspace", "pane"]
 command = ["node", "scripts/open-city.mjs"]
+
+# A Random Act: once an hour, a hurricane, a meteor, a flash skyscraper… — grow or wreck the city.
+[[actions]]
+id = "random-act"
+title = "A Random Act"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/random-act.js"]

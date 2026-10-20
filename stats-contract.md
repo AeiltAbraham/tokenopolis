@@ -34,12 +34,12 @@ most_at_once, by_agent{<agent>: {...}}`. We read **only** `windows.{total,24h,7d
 
 ### Burn definition
 
-`burn = in + out + cache_read + cache_write` (sum of **all four** token counters), applied
-identically to each window. Rationale: the spec's "the more you burn" reads most literally as all
-tokens; it keeps the number large and always-increasing with use. Note `cache_read` dominates in
-practice (≈99% of the total), so the city effectively tracks total activity volume — fine for a
-toy. If we later want a "generation-focused" feel, the weighting is a one-line change isolated to
-`src/stats.js` / `src/tuning.js`; the rest of the system only sees the normalized scalar.
+`burn = in + out + cache_write` (**`cache_read` is excluded**), applied identically to each window.
+Rationale: `cache_read` is re-read context, not new work — it dominates the raw counters (≈94% of
+the total in practice), so counting it made the city balloon from re-reading the same history rather
+than from genuine token burn. Burn is the sum of genuinely new tokens: prompt input, generated
+output, and newly-written cache. The weighting is isolated to `src/stats.js` (and the mirror in
+`src/claude-stats.js` for Claude Code usage); the rest of the system only sees the normalized scalar.
 
 Windows are present directly, so **no hourly-bucket (`blocks`) derivation is needed** for 24h/7d.
 

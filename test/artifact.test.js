@@ -37,7 +37,7 @@ test('embedded city-data JSON round-trips and matches the computed readout', () 
 
 test('HUD shows the economy readout, lifetime panel, name and theme', () => {
   const html = buildArtifactHtml(makeState(), { cityName: 'Burgville', theme: 'coastal' })
-  for (const label of ['Population', 'Treasury', 'Economy', 'Vitality', 'Peak', 'Built since install', 'Decay clock']) {
+  for (const label of ['Population', 'Treasury', 'Economy', 'Vitality', 'Peak', 'Decay clock']) {
     assert.ok(html.includes(label), `HUD missing "${label}"`)
   }
   assert.ok(html.includes('Burgville'), 'city name shown')

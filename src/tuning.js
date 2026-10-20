@@ -27,7 +27,7 @@ export const ECONOMY = {
 
   treasuryBase: 0, // starting treasury
   treasuryVitality: 500, // treasury bump from vitality alone (a busy town has cash flow)
-  treasuryPerToken: 0.004, // treasury gained per burned token at full activity
+  treasuryPerToken: 1, // treasury ≈ tokens burned — an always-moving number that changes with every burn
 
   ratingBase: 1, // floor economy score
   ratingVitality: 30, // economy-score bump from vitality alone (recent activity reads as a hot economy)

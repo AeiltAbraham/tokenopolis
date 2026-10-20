@@ -2,7 +2,7 @@
 // initial city; then it ticks on an interval and immediately when a `refresh.request` poke appears
 // (written by the status hook). Never exits on a tick error. The CLI entry wires signals.
 
-import { watch, unlink } from 'node:fs'
+import { watch, unlink, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readStats as realReadStats } from '../src/stats.js'
@@ -10,14 +10,21 @@ import { loadState, saveState, initState, logLine } from '../src/state.js'
 import { writeArtifact } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
 import { tick } from '../src/tick.js'
+import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/claude-stats.js'
 
 const randomSeed = () => (Math.floor(Math.random() * 0xffffffff) >>> 0)
 
 // Ensures a state file exists. Returns true when state is ready, false when it DEFERRED because the
 // first stats read failed — baseline capture must wait for a real read, or grow-from-zero would be
 // defeated (a fabricated baseline of 0 counts the whole machine history as "built"). Retried next tick.
-export function ensureState(dir, readStats, nowIso, config) {
-  if (loadState(dir, nowIso)) return true
+export function ensureState(dir, readStats, nowIso, config, claudeDir = claudeProjectsDir()) {
+  if (loadState(dir, nowIso)) {
+    // Upgrade path: an existing install adopting combined-burn has no Claude offsets yet. Initialize
+    // them (skipping existing history) so the city doesn't jump from 2 GB of past transcripts.
+    const offsetsPath = join(dir, 'claude-offsets.json')
+    if (!existsSync(offsetsPath)) initClaudeOffsets(offsetsPath, claudeDir)
+    return true
+  }
   const stats = readStats()
   if (!stats) {
     logLine(dir, 'stats unavailable at install; deferring baseline capture until a successful read', nowIso)
@@ -25,8 +32,9 @@ export function ensureState(dir, readStats, nowIso, config) {
   }
   const state = initState({ baselineLifetimeTokens: stats.lifetimeTotal, installedAt: nowIso(), citySeed: randomSeed() })
   saveState(dir, state)
+  initClaudeOffsets(join(dir, 'claude-offsets.json'), claudeDir) // skip existing Claude history → grow-from-zero
   writeArtifact(state, config, dir)
-  logLine(dir, `initialized (grow-from-zero; baseline ${stats.lifetimeTotal} tokens)`, nowIso)
+  logLine(dir, `initialized (grow-from-zero; baseline ${stats.lifetimeTotal} cornercase tokens; Claude counted forward)`, nowIso)
   return true
 }
 
@@ -36,11 +44,13 @@ export function startService({
   readStats = realReadStats,
   config = readConfig(),
   nowIso = () => new Date().toISOString(),
+  claudeDir = claudeProjectsDir(),
 }) {
+  const offsetsPath = join(dir, 'claude-offsets.json')
   const run = () => {
     try {
-      if (!ensureState(dir, readStats, nowIso, config)) return // first read failed — retry next tick
-      tick({ dir, readStats, config, nowIso }, nowIso())
+      if (!ensureState(dir, readStats, nowIso, config, claudeDir)) return // first read failed — retry next tick
+      tick({ dir, readStats, config, nowIso, readClaude: () => readClaudeDelta(offsetsPath, claudeDir) }, nowIso())
     } catch (e) {
       logLine(dir, `tick error: ${e && e.message}`, nowIso) // never exit the loop on a tick error
     }

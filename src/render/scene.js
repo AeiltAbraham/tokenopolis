@@ -48,6 +48,9 @@ export function sceneFor(cityState, citySeed) {
   // Collapse tracks how far the effective scale has fallen below the peak (the bones) — so a city
   // visibly rebuilds as it recovers, independent of the condition label.
   const collapseRatio = clamp01((sizeIndex - effective) / Math.max(1, sizeIndex))
+  // Structural stress is the WORSE of slow decay (condition) and a sudden fall below peak — so a
+  // disaster ("A Random Act") visibly wrecks buildings even while the condition label is still healthy.
+  const stress = Math.max(conditionDamage, collapseRatio)
 
   // Conceptual building count can be astronomical; LOD caps the RENDERED primitives.
   const conceptual = Math.round(SCENE.baseBuildings * SCENE.buildingGrowth ** sizeIndex)
@@ -67,8 +70,8 @@ export function sceneFor(cityState, citySeed) {
     const zone = ZONE_BAG[Math.floor(rnd() * ZONE_BAG.length)]
     const baseHeight = zone === 'park' ? 0 : 1 + Math.round(landValue * (2 + sizeIndex) + rnd() * 2)
     const dmgRnd = rnd()
-    const damage = clamp01(conditionDamage * (0.6 + 0.8 * dmgRnd))
-    const collapsed = ruined && dmgRnd < collapseRatio
+    const damage = clamp01(stress * (0.6 + 0.8 * dmgRnd))
+    const collapsed = dmgRnd < collapseRatio // buildings in the fallen gap become rubble (decay OR disaster)
     buildings.push({
       gx,
       gy,

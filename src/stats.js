@@ -5,7 +5,9 @@
 
 import { execFileSync } from 'node:child_process'
 
-const TOKEN_FIELDS = ['in', 'out', 'cache_read', 'cache_write']
+// cache_read (re-read context) is EXCLUDED — it's ~94% of the total and would balloon the city from
+// re-reads of the same history, not new work. Burn = new tokens only: in + out + cache_write.
+const TOKEN_FIELDS = ['in', 'out', 'cache_write']
 // normalized key → window name in `cornercase stats --json`
 const WINDOWS = { lifetimeTotal: 'total', burn24h: '24h', burn7d: '7d' }
 
@@ -13,7 +15,7 @@ function defaultExec() {
   return execFileSync('cornercase', ['stats', '--json'], { encoding: 'utf8' })
 }
 
-// burn = in + out + cache_read + cache_write for one window; null if any field is missing/non-numeric.
+// burn = in + out + cache_write for one window; null if any field is missing/non-numeric.
 function burnOf(win) {
   if (!win || typeof win !== 'object' || !win.tokens) return null
   let sum = 0

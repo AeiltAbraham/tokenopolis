@@ -12,6 +12,10 @@ import { scaleFor, tokensForIndex } from './scale.js'
 const DAY_MS = 86_400_000
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x)
 
+// The city's effective size = real burn + the signed "A Random Act" lever, floored at an empty lot.
+// Boons raise it (grow), disasters lower it (shrink). Everything visual/economic keys off this.
+export const effectiveBuilt = (sim) => Math.max(0, (sim?.builtTokens ?? 0) + (sim?.actTokens ?? 0))
+
 export function conditionIndexFor(daysSinceBurn) {
   let idx = 0
   for (let i = 0; i < DECAY.conditionDays.length; i++) {
@@ -40,10 +44,14 @@ export function step(prevSim, { builtTokens, burn24h, burn7d }, now) {
   const prev = prevSim ?? {}
   const nowMs = Date.parse(now)
 
-  const builtIndex = scaleFor(builtTokens).scaleIndex
+  // Scale follows effective size (real burn + the act lever), so a boon grows the city and a disaster
+  // shrinks it. Peak is the high-water "bones"; a boon can raise it, a disaster never lowers it.
+  const actTokens = prev.actTokens ?? 0
+  const eff = Math.max(0, builtTokens + actTokens)
+  const builtIndex = scaleFor(eff).scaleIndex
   const peakScaleIndex = Math.max(prev.peakScaleIndex ?? 0, builtIndex)
 
-  const delta = builtTokens - (prev.builtTokens ?? 0)
+  const delta = builtTokens - (prev.builtTokens ?? 0) // real burn only — acts are not "burn"
   const meaningful = delta >= DECAY.meaningfulTokens
   const prevLast = prev.lastMeaningfulBurnAt ?? now
   const lastMeaningfulBurnAt = meaningful ? now : prevLast
@@ -70,11 +78,14 @@ export function step(prevSim, { builtTokens, burn24h, burn7d }, now) {
     ruinProgress = Math.min(peakScaleIndex, Math.max(ruinProgress, lost))
   }
 
-  const effectiveScaleIndex = Math.max(0, peakScaleIndex - ruinProgress)
+  // Effective scale is bounded by BOTH the ruins model (idle decay) AND the act lever: a disaster
+  // drops builtIndex below peak, so the city shrinks now and rebuilds as real burn catches up.
+  const effectiveScaleIndex = Math.max(0, Math.min(peakScaleIndex - ruinProgress, builtIndex))
   const conditionIndex = conditionIndexFor(daysSinceBurn)
 
   return {
     builtTokens,
+    actTokens,
     scaleIndex: effectiveScaleIndex,
     peakScaleIndex,
     condition: conditionName(conditionIndex),

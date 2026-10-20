@@ -56,3 +56,9 @@ Adversarial multi-agent review (18 agents, 6 dimensions × 2 skeptics). 0 blocke
 
 
 
+
+## 2026-10-20 — honest-burn fix + "A Random Act" feature
+
+**cache_read excluded from burn.** Treasury was ballooning (7M → 34M "too fast"): the metric summed `cache_read`, which is re-read context (~94–97% of the raw counters), not new work. Now `burn = in + out + cache_write` in BOTH adapters (`src/stats.js`, `src/claude-stats.js`); `stats-contract.md` + tests updated. Live install re-baselined (old inflated state backed up to `<state>/.backup-pre-cacheread-fix/`): cornercase lifetime baseline dropped 18,820,615 → 519,480, confirming the inflation. City counts forward honestly now.
+
+**"A Random Act" (new action).** Once-an-hour button (`bin/random-act.js`, manifest action `random-act`) that rolls a 50-outcome deck (25 boons / 25 disasters, `src/acts.js`) drawn WITHOUT replacement — all 50 occur once before the deck resets. Each act moves one signed lever `sim.actTokens` (a fraction of current size): boons grow/prettify, disasters shrink/wreck. The lever feeds `effectiveBuilt` → scale + economy (`effectiveBuilt` exported from `src/sim/condition.js`; `step()` now carries `actTokens` and bounds effective scale by `min(peak − ruin, builtIndexFromEffective)` — backward-compatible, `actTokens 0` ⇒ identical). Real burn dilutes an act over time (natural recovery). The artifact names the occurrence (banner + `Latest act` HUD row) and plays one of ~20 archetype animations (flood/quake/meteor/fire/bloom/boom/…) when the render is fresh. `scene.js` now shows structural rubble whenever effective < peak (not only at condition=Ruins), so a disaster visibly damages the skyline. Live-smoke verified: Tsunami dropped City→Town (actTokens −11.98M), treasury 28M→16.6M, flood animation + banner render clean (no console errors), cooldown refuses a 2nd act (~60m), and the restarted service preserves `actTokens` across ticks. Suite **81/81**; e2e OK; city.html 24.6KB (≤300KB).

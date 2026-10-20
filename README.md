@@ -17,9 +17,16 @@ budget tracker: more burn = bigger city.
 
 ## Privacy
 
-Tokenopolis reads only **usage magnitude** — token counts and timings from `cornercase stats`,
-which are *numbers only* (no prompts, code, models, paths, or conversation ids, by platform
-design). It never sees what you're working on.
+Tokenopolis reads only **usage magnitude** — token counts and timings — and never what you're
+working on:
+
+- **cornercase agents** come from `cornercase stats` (numbers only — no prompts, code, models,
+  paths, or conversation ids, by platform design).
+- **Claude Code (desktop/CLI)** is counted by reading the `usage` token numbers from your
+  `~/.claude` transcript files **locally** — only the numbers, never your conversation text.
+
+The two sources are summed, and **nothing is ever sent anywhere** — it all stays on your machine.
+(cornercase-run agents live under cornercase's own account dirs, so the two don't double-count.)
 
 ## Install
 

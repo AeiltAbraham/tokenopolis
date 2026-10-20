@@ -16,6 +16,7 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
     stats: { lastReadAt: null, lastLifetimeTokens: baselineLifetimeTokens, burn24h: 0, burn7d: 0 },
     sim: {
       builtTokens: 0,
+      actTokens: 0, // signed "A Random Act" lever: boons raise it, disasters lower it
       scaleIndex: 0,
       peakScaleIndex: 0,
       condition: 'Thriving',
@@ -24,6 +25,10 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
       ruinProgress: 0,
       recoveryCredit: 0,
     },
+    claude: { cumulativeTokens: 0 }, // Claude Code (desktop/CLI) burn, counted forward from install
+    // "A Random Act" deck: usedIds drawn-without-replacement (reset when all 50 used), lastActAt =
+    // hourly cooldown stamp, last = the most recent occurrence (what the artifact names + animates).
+    acts: { usedIds: [], lastActAt: null, last: null },
     citySeed,
     render: { lastRenderedAt: null, artifactFile: 'city.html' },
   }
@@ -65,23 +70,22 @@ export function saveState(dir, state) {
   writeFileSync(statePath(dir), JSON.stringify(state, null, 2), { mode: 0o600 })
 }
 
-// Pure. Refreshes the stats block and clamps builtTokens monotonic (a stats hiccup can never
-// shrink history). stats === null → state returned unchanged (hold last-known). Never throws.
-export function applyStatsRead(state, stats) {
-  if (!stats) return state
-  const builtTokens = Math.max(
-    state.sim.builtTokens,
-    stats.lifetimeTotal - state.install.baselineLifetimeTokens,
-    0,
-  )
+// Pure. Accumulates the Claude burn delta, refreshes the cornercase stats block, and clamps
+// builtTokens monotonic. builtTokens = (cornercase lifetime − baseline) + Claude-since-install — the
+// two sources summed. stats === null AND no Claude delta → state returned unchanged (hold). Never throws.
+export function applyStatsRead(state, stats, claudeDelta = 0) {
+  const added = Math.max(0, Number(claudeDelta) || 0)
+  if (!stats && added === 0) return state
+  const claudeCumulative = (state.claude?.cumulativeTokens ?? 0) + added
+  const lifetime = stats ? stats.lifetimeTotal : state.stats.lastLifetimeTokens
+  const cornercaseBurn = Math.max(0, lifetime - state.install.baselineLifetimeTokens)
+  const builtTokens = Math.max(state.sim.builtTokens, cornercaseBurn + claudeCumulative, 0)
   return {
     ...state,
-    stats: {
-      lastReadAt: stats.readAt,
-      lastLifetimeTokens: stats.lifetimeTotal,
-      burn24h: stats.burn24h,
-      burn7d: stats.burn7d,
-    },
+    claude: { ...(state.claude ?? {}), cumulativeTokens: claudeCumulative },
+    stats: stats
+      ? { lastReadAt: stats.readAt, lastLifetimeTokens: stats.lifetimeTotal, burn24h: stats.burn24h, burn7d: stats.burn7d }
+      : state.stats,
     sim: { ...state.sim, builtTokens },
   }
 }
