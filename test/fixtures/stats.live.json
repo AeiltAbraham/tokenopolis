@@ -1,0 +1,61 @@
+{
+  "since": "2026-09-01T08:30:14.113Z",
+  "windows": {
+    "24h": {
+      "agents": 4,
+      "prompts": 3,
+      "turns": 4,
+      "agent_seconds": 900.0,
+      "waited_seconds": 1800.0,
+      "tokens": { "in": 1000, "out": 30000, "cache_read": 2000000, "cache_write": 60000 },
+      "busy_seconds": 900.0,
+      "most_at_once": 1,
+      "by_agent": {
+        "claude": {
+          "agents": 4,
+          "prompts": 3,
+          "turns": 4,
+          "tokens": { "in": 1000, "out": 30000, "cache_read": 2000000, "cache_write": 60000 }
+        }
+      }
+    },
+    "7d": {
+      "agents": 20,
+      "prompts": 15,
+      "turns": 20,
+      "agent_seconds": 5400.0,
+      "waited_seconds": 10800.0,
+      "tokens": { "in": 3000, "out": 90000, "cache_read": 6000000, "cache_write": 180000 },
+      "busy_seconds": 5400.0,
+      "most_at_once": 2,
+      "by_agent": {
+        "claude": {
+          "agents": 20,
+          "prompts": 15,
+          "turns": 20,
+          "tokens": { "in": 3000, "out": 90000, "cache_read": 6000000, "cache_write": 180000 }
+        }
+      }
+    },
+    "total": {
+      "agents": 42,
+      "prompts": 31,
+      "turns": 42,
+      "agent_seconds": 12000.0,
+      "waited_seconds": 24000.0,
+      "tokens": { "in": 5000, "out": 120000, "cache_read": 8000000, "cache_write": 250000 },
+      "busy_seconds": 12000.0,
+      "most_at_once": 2,
+      "by_agent": {
+        "claude": {
+          "agents": 42,
+          "prompts": 31,
+          "turns": 42,
+          "tokens": { "in": 5000, "out": 120000, "cache_read": 8000000, "cache_write": 250000 }
+        }
+      }
+    }
+  },
+  "blocks": [],
+  "merged_pull_requests": { "24h": 0, "7d": 0, "total": 0, "accounts": {}, "complete": true }
+}

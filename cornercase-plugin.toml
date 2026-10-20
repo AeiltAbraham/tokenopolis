@@ -1,0 +1,22 @@
+id = "tokenopolis"
+name = "Tokenopolis"
+version = "0.1.0"
+description = "Grow a SimCity-style city as you burn tokens in cornercase — village to metropolis and back to ruins."
+permissions = ["read-stats", "open-file"]
+
+# Long-running keeper: polls `cornercase stats`, runs the sim, re-renders the city artifact.
+[[service]]
+id = "city-keeper"
+command = ["node", "service/main.js"]
+
+# Agent status changes just poke the keeper (hooks are killed at 60s — real work stays in the service).
+[[events]]
+on = "status"
+command = ["node", "scripts/poke.mjs"]
+
+# Open the rendered city.
+[[actions]]
+id = "open-city"
+title = "Open Tokenopolis"
+contexts = ["workspace", "pane"]
+command = ["node", "scripts/open-city.mjs"]

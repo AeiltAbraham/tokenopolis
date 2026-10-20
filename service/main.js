@@ -1,0 +1,92 @@
+// The long-running keeper. First run captures the install baseline (grow-from-zero) and renders an
+// initial city; then it ticks on an interval and immediately when a `refresh.request` poke appears
+// (written by the status hook). Never exits on a tick error. The CLI entry wires signals.
+
+import { watch, unlink } from 'node:fs'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { readStats as realReadStats } from '../src/stats.js'
+import { loadState, saveState, initState, logLine } from '../src/state.js'
+import { writeArtifact } from '../src/artifact.js'
+import { readConfig } from '../src/config.js'
+import { tick } from '../src/tick.js'
+
+const randomSeed = () => (Math.floor(Math.random() * 0xffffffff) >>> 0)
+
+// Ensures a state file exists. Returns true when state is ready, false when it DEFERRED because the
+// first stats read failed — baseline capture must wait for a real read, or grow-from-zero would be
+// defeated (a fabricated baseline of 0 counts the whole machine history as "built"). Retried next tick.
+export function ensureState(dir, readStats, nowIso, config) {
+  if (loadState(dir, nowIso)) return true
+  const stats = readStats()
+  if (!stats) {
+    logLine(dir, 'stats unavailable at install; deferring baseline capture until a successful read', nowIso)
+    return false
+  }
+  const state = initState({ baselineLifetimeTokens: stats.lifetimeTotal, installedAt: nowIso(), citySeed: randomSeed() })
+  saveState(dir, state)
+  writeArtifact(state, config, dir)
+  logLine(dir, `initialized (grow-from-zero; baseline ${stats.lifetimeTotal} tokens)`, nowIso)
+  return true
+}
+
+export function startService({
+  dir,
+  tickMs = 60_000,
+  readStats = realReadStats,
+  config = readConfig(),
+  nowIso = () => new Date().toISOString(),
+}) {
+  const run = () => {
+    try {
+      if (!ensureState(dir, readStats, nowIso, config)) return // first read failed — retry next tick
+      tick({ dir, readStats, config, nowIso }, nowIso())
+    } catch (e) {
+      logLine(dir, `tick error: ${e && e.message}`, nowIso) // never exit the loop on a tick error
+    }
+  }
+  run()
+  const interval = setInterval(run, tickMs) // also the poll fallback if fs.watch is unavailable
+
+  let watcher
+  try {
+    watcher = watch(dir, (_event, file) => {
+      if (file === 'refresh.request') {
+        unlink(join(dir, 'refresh.request'), () => {}) // best-effort delete after handling
+        run()
+      }
+    })
+  } catch {
+    /* fs.watch unsupported here — the interval covers refreshes */
+  }
+
+  return {
+    run,
+    stop() {
+      clearInterval(interval)
+      try {
+        watcher && watcher.close()
+      } catch {
+        /* ignore */
+      }
+    },
+  }
+}
+
+// CLI entry.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const dir = process.env.CORNERCASE_PLUGIN_STATE || process.cwd()
+  const svc = startService({ dir, tickMs: Number(process.env.TOKENOPOLIS_TICK_MS) || 60_000 })
+  logLine(dir, 'service started', () => new Date().toISOString())
+  const shutdown = () => {
+    try {
+      logLine(dir, 'shutdown', () => new Date().toISOString())
+    } catch {
+      /* ignore */
+    }
+    svc.stop()
+    process.exit(0)
+  }
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
+}
