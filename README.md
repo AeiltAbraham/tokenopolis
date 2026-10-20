@@ -9,6 +9,10 @@ shareable HTML artifact.
 It's **more fun than helpful** — ambient delight, not a productivity tool. The opposite of a
 budget tracker: more burn = bigger city.
 
+> 🚧 **Beta** — young and evolving, so expect rough edges. The **styling is wide open to
+> iteration**, and this repo is **public**: issues and pull requests are very welcome, especially
+> on the look of the city (see [Contributing](#contributing)).
+
 ## Privacy
 
 Tokenopolis reads only **usage magnitude** — token counts and timings from `cornercase stats`,
@@ -72,6 +76,21 @@ Distributed through the cornercase marketplace:
 
 Before the first publish, run the real-platform smoke (link + enable in a live cornercase, trigger a
 `status` event, open the city) — tracked as the owed pre-publish item in `progress.md`.
+
+## Contributing
+
+Tokenopolis is **public and open to contributions — especially styling.** Great places to start:
+
+- **Themes / palettes** → `src/render/themes.js` (five palettes today — refine them or add your own)
+- **The renderer** → `src/render/draw.js` (isometric buildings, lit windows, roads, infra tiers,
+  damage/ruins, animation)
+- **City shape** → `src/render/scene.js` (zoning, density, LOD, landmarks, underground)
+- **Preview your changes** → `node scripts/gallery.mjs` renders six canonical states
+  (hamlet → metropolis → ruins → rebuilt) side by side into `gallery.html`
+
+Before a PR: `npm install` (dev-only TOML parser) then `node --test` — the suite is fast and
+zero-config. Keep the simulation deterministic and the artifact self-contained (no network, no
+external references). Open issues / PRs at <https://github.com/AeiltAbraham/tokenopolis>.
 
 ## Layout
 
