@@ -1,0 +1,37 @@
+[package]
+name = "skyline-window"
+version = "0.1.0"
+edition = "2024"
+description = "Tokenopolis' floating skyline window: shows the pixels bin/skyline-window.js sends it"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "skyline-window"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std", "libc", "objc2-core-foundation", "NSApplication", "NSBezierPath", "NSColor", "NSEvent", "NSFont", "NSGraphics",
+  "NSMenu", "NSMenuItem", "NSPanel", "NSResponder", "NSRunningApplication", "NSScreen", "NSStringDrawing", "NSView",
+  "NSWindow", "NSCell", "NSControl", "NSText", "NSTextField", "NSFontDescriptor"
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std", "NSArray", "NSDictionary", "NSGeometry", "NSObject", "NSString", "NSTimer", "NSAttributedString", "NSValue"
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gdk4-x11 = "0.11.5"
+gtk4 = { version = "0.11.5", features = ["v4_6"] }
+libloading = "0.9.0"
+wayland-client = "0.31.15"
+x11rb = "0.14.0"
+
+[profile.release]
+strip = true
+lto = true

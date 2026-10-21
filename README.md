@@ -71,6 +71,18 @@ Then open your city from the **Open Tokenopolis** action (workspace or pane menu
   severe version). Plus a gritty **wasteland** theme and deeper decay — **boarded windows** and
   **overgrowth** reclaiming an idle city. All original work (no third-party game assets or code).
 
+- **Skyline window:** a small floating window with a live 2D street view of the city, over everything and
+  on every desktop, like cornercase-float: it never takes the focus. A light frame fits the city (it grows as
+  the city does); drag it anywhere, drag its edge or corner to zoom the city, the gear or a right-click opens its menu, the
+  cross closes it. Windows
+  light up only at night on your clock, and the sky stays calm: birds and planes only pass now and then. It is drawn in your **terminal's colours** (Ghostty's config; xterm's
+  defaults otherwise). The cars, people, shamblers, birds, planes, boats, weather, day/night, acts and
+  climaxes are the same ones the city shows; the street you see is the front edge of the grid.
+  **Right-click** it for position (six presets), size, opacity and colour, or to hide it; the
+  **Show/Hide Skyline** action brings it back. Settings are saved to `settings.json` in the state folder.
+  The window is a small native helper (`native/skyline-window`, Rust: AppKit on macOS, GTK 4 on Linux,
+  placed through layer-shell or X11 as cornercase-float does); build it with `cargo build --release`.
+
 See `spec.md` / `clarify.md` / `plan.md` for the full design. Build status: `progress.md`.
 
 ## Configuration
@@ -82,7 +94,11 @@ Cosmetic only — no effect on the simulation. Create `config.json` in `$CORNERC
 ```
 
 Themes: `temperate · coastal · desert · nordic · neon`. Missing or invalid values fall back to the
-defaults. (The config path is assumed to be `$CORNERCASE_PLUGIN_CONFIG/config.json`; confirm against
+defaults.
+
+The skyline window's defaults come from `"skyline": { "color": "fg", "opacity": 0.85 }`: `color` is
+`fg` (the terminal's text colour), an ANSI name (`blue`, `bright-cyan`, …), `ansi:N` (0–15) or
+`#rrggbb`; `opacity` runs from 0.1 to 1. What you pick in its menu is saved over them. (The config path is assumed to be `$CORNERCASE_PLUGIN_CONFIG/config.json`; confirm against
 your cornercase version — see the owed hook/path probe noted in `progress.md`.)
 
 ## State & reset

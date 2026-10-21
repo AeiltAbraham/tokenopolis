@@ -64,7 +64,7 @@ test('openCity falls back to the static file when the endpoint is stale (not liv
 
 test('every manifest command points at a file that exists', () => {
   const manifest = parse(readFileSync(join(root, 'cornercase-plugin.toml'), 'utf8'))
-  const entries = [...(manifest.service ?? []), ...(manifest.events ?? []), ...(manifest.actions ?? [])]
+  const entries = [...(manifest.service ?? []), ...(manifest.events ?? []), ...(manifest.actions ?? []), ...(manifest.window ?? [])]
   assert.ok(entries.length >= 3)
   for (const e of entries) {
     const file = e.command[1] // ["node", "<file>"]

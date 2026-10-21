@@ -22,6 +22,7 @@ test('every service/events/actions command is an argv array, never a shell strin
     ...(manifest.service ?? []).map((s) => ['service', s]),
     ...(manifest.events ?? []).map((e) => ['events', e]),
     ...(manifest.actions ?? []).map((a) => ['actions', a]),
+    ...(manifest.window ?? []).map((w) => ['window', w]),
   ]
   assert.ok(entries.length > 0, 'expected at least one service/events/actions entry')
   for (const [section, entry] of entries) {

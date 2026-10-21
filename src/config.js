@@ -7,8 +7,9 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { parseTint } from './render/skyline.js'
 
-export const DEFAULT_CONFIG = { cityName: 'Tokenopolis', theme: 'temperate', flag: '', districts: { tech: 'Tech', ops: 'Industry' } }
+export const DEFAULT_CONFIG = { cityName: 'Tokenopolis', theme: 'temperate', flag: '', districts: { tech: 'Tech', ops: 'Industry' }, skyline: { color: 'fg', opacity: 0.85 } }
 const ALLOWED_THEMES = new Set(['temperate', 'coastal', 'desert', 'nordic', 'neon', 'cyberpunk', 'solarpunk', 'blueprint', 'crt', 'wasteland', 'ascension'])
 const dname = (v, fallback) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 24) : fallback)
 
@@ -25,5 +26,11 @@ export function readConfig(configDir = process.env.CORNERCASE_PLUGIN_CONFIG) {
   const theme = ALLOWED_THEMES.has(raw?.theme) ? raw.theme : DEFAULT_CONFIG.theme
   const flag = typeof raw?.flag === 'string' ? raw.flag.trim().slice(0, 4) : '' // a short emoji/badge by the name
   const districts = { tech: dname(raw?.districts?.tech, 'Tech'), ops: dname(raw?.districts?.ops, 'Industry') }
-  return { cityName, theme, flag, districts }
+  // The skyline pane: building colour (terminal fg, an ANSI name, ansi:N or #rrggbb) + opacity 0.1..1.
+  const op = Number(raw?.skyline?.opacity)
+  const skyline = {
+    color: parseTint(raw?.skyline?.color) ?? DEFAULT_CONFIG.skyline.color,
+    opacity: Number.isFinite(op) ? Math.max(0.1, Math.min(1, op)) : DEFAULT_CONFIG.skyline.opacity,
+  }
+  return { cityName, theme, flag, districts, skyline }
 }

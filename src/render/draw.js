@@ -42,7 +42,7 @@ const isNight = (hex) => {
   const n = parseInt(hex.slice(1), 16)
   return (n >> 16) + ((n >> 8) & 255) + (n & 255) < 320
 }
-const srnd = (a, b) => {
+export const srnd = (a, b) => {
   let h = ((a * 73856093) ^ (b * 19349663)) >>> 0
   h ^= h >>> 13
   return (h >>> 0) % 1000 / 1000

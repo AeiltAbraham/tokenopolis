@@ -21,6 +21,18 @@ title = "Open Tokenopolis"
 contexts = ["workspace", "pane"]
 command = ["node", "scripts/open-city.mjs"]
 
+# The skyline: a small floating window (macOS) with a live 2D street view of the city, in the
+# terminal's colours. Right-click it for position, size, opacity and colour.
+[[window]]
+id = "skyline"
+command = ["node", "bin/skyline-window.js"]
+
+[[actions]]
+id = "toggle-skyline"
+title = "Show/Hide Skyline"
+contexts = ["workspace", "pane"]
+command = ["node", "scripts/toggle-skyline.mjs"]
+
 # A Random Act: once an hour, a hurricane, a meteor, a flash skyscraper… — grow or wreck the city.
 [[actions]]
 id = "random-act"
