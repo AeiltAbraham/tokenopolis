@@ -7,6 +7,10 @@ export const THEMES = {
   desert: { sky: '#f3e4c5', ground: '#d8b483', road: '#b79a72', roof: '#b4652a', window: '#fff0b0', damage: '#3b2a18', rubble: '#9a8260', underground: '#3a2c1c', accent: '#e8902a', zone: { R: '#e8c79a', C: '#d7a35e', I: '#c3a877', park: '#88a65a' } },
   nordic: { sky: '#e7eef3', ground: '#b9c6c2', road: '#9aa6a6', roof: '#415a6b', window: '#fdf0d0', damage: '#232b2e', rubble: '#879491', underground: '#232c33', accent: '#6fa3c0', zone: { R: '#cdd6d4', C: '#8fb0c0', I: '#a6afad', park: '#7fae8e' } },
   neon: { sky: '#120a26', ground: '#1d1240', road: '#2a2050', roof: '#ff3ea5', window: '#38f0ff', damage: '#0a0618', rubble: '#3a2e5a', underground: '#060316', accent: '#b14bff', zone: { R: '#ff5bc0', C: '#38f0ff', I: '#7a5cff', park: '#2bd9a6' } },
+  cyberpunk: { sky: '#0a0612', ground: '#160a28', road: '#241640', roof: '#ff2d95', window: '#20e8ff', damage: '#050210', rubble: '#352550', underground: '#04010d', accent: '#18f0ff', zone: { R: '#ff5bc0', C: '#20e8ff', I: '#8a5cff', park: '#2bd9a6' } },
+  solarpunk: { sky: '#dff3d8', ground: '#9fc46b', road: '#b0b58f', roof: '#e0a43a', window: '#fff4c2', damage: '#2e2a18', rubble: '#8a8a6a', underground: '#2c3320', accent: '#f2b23a', zone: { R: '#d8c98a', C: '#8fc9a0', I: '#b4b884', park: '#5fb24a' } },
+  blueprint: { sky: '#0c1f3a', ground: '#102a4a', road: '#2a6fb0', roof: '#5fd0ff', window: '#bfeeff', damage: '#05101f', rubble: '#1e3a5a', underground: '#050f1e', accent: '#5fd0ff', zone: { R: '#3f86c0', C: '#5fd0ff', I: '#4a6f99', park: '#4fb0b0' } },
+  crt: { sky: '#02140a', ground: '#04240f', road: '#0a3a18', roof: '#39ff6a', window: '#9bffb0', damage: '#021005', rubble: '#14401f', underground: '#010d05', accent: '#39ff6a', zone: { R: '#2fd456', C: '#39ff6a', I: '#1f9a3f', park: '#7bff8a' } },
 }
 
 export function resolveTheme(name) {

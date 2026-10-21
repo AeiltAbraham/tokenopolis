@@ -136,6 +136,9 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   mark(ctx, 'landmarks')
   for (const l of scene.landmarks) drawLandmark(ctx, l, p, ox, oy, tick)
 
+  mark(ctx, 'citizens')
+  drawCitizens(ctx, scene, p, ox, oy, tick, stale)
+
   mark(ctx, 'overlay')
   if (!stale && !scene.ruined) {
     const cx = ox - 30 + ((tick * 4) % 24)
@@ -156,6 +159,32 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   vg.addColorStop(1, night ? 'rgba(0,0,0,0.5)' : 'rgba(8,10,18,0.26)')
   ctx.fillStyle = vg
   ctx.fillRect(0, 0, W, H)
+}
+
+// Life signal: pedestrians (small accent dots) and the odd car move along the road grid, animated by
+// tick. Count scales with the footprint, capped for LOD. Deterministic per-citizen via srnd (no state).
+const CAR_COLORS = ['#ffd76a', '#ff6a8a', '#6ad7ff', '#e8ecf2']
+function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
+  if (stale) return // a stale/decaying city empties its streets — and keeps frames still
+  const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
+  if (n < 1) return
+  const count = Math.min(90, 8 + n * 5)
+  for (let i = 0; i < count; i++) {
+    const onX = srnd(i, 1) < 0.5 // move along the gx axis (true) or the gy axis (false)
+    const lane = Math.round(srnd(i, 2) * n) // which road (grid line)
+    const car = srnd(i, 3) > 0.78
+    const dir = srnd(i, 5) > 0.5 ? 1 : -1
+    const speed = car ? 0.02 : 0.009
+    const f = (((srnd(i, 6) + dir * tick * speed) % 1) + 1) % 1
+    const pos = onX ? iso(f * n, lane, ox, oy) : iso(lane, f * n, ox, oy)
+    if (car) {
+      ctx.fillStyle = CAR_COLORS[i % CAR_COLORS.length]
+      ctx.fillRect(pos.x - 2, pos.y - 2, 4, 3)
+    } else {
+      ctx.fillStyle = rgba(p.accent, 0.85)
+      ctx.fillRect(pos.x - 1, pos.y - 1, 2, 2)
+    }
+  }
 }
 
 function drawBuilding(ctx, b, p, ox, oy, tick, stale) {

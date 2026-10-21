@@ -7,9 +7,27 @@ import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-export function createCityServer({ dir, runAct }) {
+export function createCityServer({ dir, runAct, readState }) {
   return createServer((req, res) => {
     const path = (req.url || '/').split('?')[0]
+
+    // Live growth: the open page polls this for the current scene + readout and re-renders in place.
+    if (req.method === 'GET' && path === '/state') {
+      let data = null
+      try {
+        data = readState ? readState() : null
+      } catch {
+        data = null
+      }
+      if (!data) {
+        res.writeHead(404, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, reason: 'no-city' }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(data))
+      return
+    }
 
     if (req.method === 'GET' && (path === '/' || path === '/city.html')) {
       const file = join(dir, 'city.html')
@@ -61,8 +79,8 @@ export function createCityServer({ dir, runAct }) {
 // open browser tab keeps working — an ephemeral port would change on every restart and break it.
 // Falls back to the next port on a conflict. basePort 0 → ephemeral (used by tests). onReady(url,
 // server) fires once listening; onFail(err) on a non-recoverable error. Never binds a public interface.
-export function startCityServer({ dir, runAct, host = '127.0.0.1', basePort = 8420, maxTries = 20, onReady, onFail }) {
-  const server = createCityServer({ dir, runAct })
+export function startCityServer({ dir, runAct, readState, host = '127.0.0.1', basePort = 8420, maxTries = 20, onReady, onFail }) {
+  const server = createCityServer({ dir, runAct, readState })
   let port = basePort
   let tries = 0
   server.on('error', (e) => {

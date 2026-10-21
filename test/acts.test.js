@@ -8,9 +8,13 @@ import {
   BOON_ANIMS,
   DISASTER_ANIMS,
   COOLDOWN_MS,
+  LEGENDARY,
+  LEGENDARY_CHANCE,
   canAct,
   msUntilNextAct,
   drawAct,
+  drawLegendary,
+  drawChoice,
   applyAct,
   performAct,
 } from '../src/acts.js'
@@ -146,4 +150,65 @@ test('runRandomAct with no city yet: reports and does nothing', () => {
   const res = runRandomAct({ dir: tmp(), nowIso: () => FIXED, open: () => {}, config: DEFAULT_CONFIG })
   assert.equal(res.ok, false)
   assert.equal(res.reason, 'no-state')
+})
+
+// A deterministic rng that yields a fixed sequence (then repeats its last value) — lets a test control
+// the legendary gate roll (first call) independently of the draw roll (second call).
+const seq = (vals) => {
+  let i = 0
+  return () => vals[Math.min(i++, vals.length - 1)]
+}
+
+test('LEGENDARY: ultra-rare acts are well-formed; sign matches kind; anims all distinct', () => {
+  assert.ok(LEGENDARY.length >= 5, 'a handful of legendaries')
+  assert.equal(new Set(LEGENDARY.map((a) => a.id)).size, LEGENDARY.length, 'ids must be unique')
+  const boons = LEGENDARY.filter((a) => a.kind === 'boon')
+  const disasters = LEGENDARY.filter((a) => a.kind === 'disaster')
+  assert.ok(boons.length > 0 && disasters.length > 0, 'a mix of boon and disaster')
+  const anims = LEGENDARY.map((a) => a.anim)
+  assert.equal(new Set(anims).size, anims.length, 'each legendary carries its OWN distinct anim')
+  for (const a of LEGENDARY) {
+    assert.ok(a.id && a.name && a.blurb && a.anim, `${a.id}: id/name/blurb/anim required`)
+    assert.equal(a.tier, 'legendary', `${a.id}: tier must be "legendary"`)
+    assert.ok(a.kind === 'boon' || a.kind === 'disaster', `${a.id}: kind`)
+    assert.ok(Math.abs(a.mag) >= 0.6 && Math.abs(a.mag) <= 1.0, `${a.id}: |mag| must be in [0.6, 1.0]`)
+    if (a.kind === 'boon') assert.ok(a.mag > 0, `${a.id}: boon mag must be positive`)
+    else assert.ok(a.mag < 0, `${a.id}: disaster mag must be negative`)
+  }
+})
+
+test('drawLegendary picks a legendary (with replacement)', () => {
+  assert.equal(drawLegendary(() => 0), LEGENDARY[0], 'rng→0 picks the first legendary')
+  assert.equal(drawLegendary(() => 0.999), LEGENDARY[LEGENDARY.length - 1], 'rng→~1 picks the last')
+  assert.ok(LEGENDARY.includes(drawLegendary(() => 0.5)), 'always a member of LEGENDARY')
+})
+
+test('performAct: a legendary fires when the gate roll is below LEGENDARY_CHANCE', () => {
+  const s = cityState()
+  // first rng() = gate (below chance → legendary); second rng() = drawLegendary pick (→ first legendary)
+  const out = performAct(s, FIXED, seq([LEGENDARY_CHANCE - 0.001, 0]))
+  assert.equal(out.acts.last.id, LEGENDARY[0].id, 'the legendary was applied')
+  assert.ok(LEGENDARY.some((l) => l.id === out.acts.last.id), 'occurrence is a legendary')
+  assert.notEqual(out.sim.actTokens, 0, 'the lever moved')
+  assert.equal(out.acts.lastActAt, FIXED)
+})
+
+test('performAct: a common act fires when the gate roll is at/above LEGENDARY_CHANCE', () => {
+  const s = cityState()
+  // first rng() = gate (at chance → NOT below → common); second rng() = drawAct pick (→ first act)
+  const out = performAct(s, FIXED, seq([LEGENDARY_CHANCE, 0]))
+  assert.equal(out.acts.last.id, ACTS[0].id, 'the common deck was used')
+  assert.ok(ACTS.some((a) => a.id === out.acts.last.id), 'occurrence is a common act')
+  assert.deepEqual(out.acts.usedIds, [ACTS[0].id], 'common deck advanced by exactly one')
+})
+
+test('drawChoice offers two distinct common acts from the remaining deck without consuming it', () => {
+  const used = ['grand-opening']
+  const before = [...used]
+  const { options } = drawChoice(used, () => 0)
+  assert.equal(options.length, 2, 'two options offered')
+  assert.notEqual(options[0].id, options[1].id, 'the two options are distinct')
+  assert.ok(options.every((o) => ACTS.some((a) => a.id === o.id)), 'both are common acts')
+  assert.ok(options.every((o) => !used.includes(o.id)), 'options come from the remaining deck')
+  assert.deepEqual(used, before, 'drawChoice does not consume / mutate the deck')
 })

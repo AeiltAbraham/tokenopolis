@@ -9,6 +9,9 @@ import { writeArtifact } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
 import { openCity } from '../scripts/open-city.mjs'
 import { performAct, canAct, msUntilNextAct } from '../src/acts.js'
+import { appendEvent } from '../src/history.js'
+import { updateProgress, newlyEarned } from '../src/progress.js'
+import { notifyAchievements } from '../src/notify.js'
 
 // Injectable for tests: nowIso (clock), rng (deck roll), open (opener), config.
 export function runRandomAct({ dir, nowIso = () => new Date().toISOString(), rng = Math.random, open = openCity, config }) {
@@ -30,10 +33,16 @@ export function runRandomAct({ dir, nowIso = () => new Date().toISOString(), rng
     return { ok: false, reason: 'cooldown', minutesLeft: mins }
   }
   const acted = performAct({ ...state, acts }, now, rng)
-  const rendered = { ...acted, render: { ...acted.render, lastRenderedAt: now } }
+  const o = acted.acts.last
+  // Chronicle the act + refresh achievements/streak immediately (cycled-deck must be caught on the
+  // 50th act, before usedIds resets), then notify any freshly-earned milestones.
+  const history = appendEvent(acted.history ?? [], { at: now, type: 'act', label: o.name, kind: o.kind })
+  const progress = updateProgress({ ...acted, history }, now)
+  const freshly = newlyEarned(state.progress, progress)
+  const rendered = { ...acted, history, progress, render: { ...acted.render, lastRenderedAt: now } }
   saveState(dir, rendered)
   writeArtifact(rendered, cfg, dir)
-  const o = rendered.acts.last
+  notifyAchievements(freshly)
   logLine(dir, `random-act: ${o.kind} "${o.name}" (delta ${o.delta}, actTokens ${rendered.sim.actTokens})`)
   const icon = o.kind === 'boon' ? '✨' : '⚠'
   console.log(`${icon} ${o.name} — ${o.blurb}`)

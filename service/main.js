@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readStats as realReadStats } from '../src/stats.js'
 import { loadState, saveState, initState, logLine } from '../src/state.js'
-import { writeArtifact } from '../src/artifact.js'
+import { writeArtifact, cityData } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
 import { tick } from '../src/tick.js'
 import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/claude-stats.js'
@@ -80,6 +80,10 @@ export function startService({
     cityServer = startCityServer({
       dir,
       runAct: () => runRandomAct({ dir, open: () => {}, nowIso, config }),
+      readState: () => {
+        const s = loadState(dir, nowIso)
+        return s ? cityData(s, config) : null
+      },
       onReady: (url) => {
         try {
           writeFileSync(endpointPath, url, { mode: 0o600 })

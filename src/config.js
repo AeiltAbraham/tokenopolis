@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const DEFAULT_CONFIG = { cityName: 'Tokenopolis', theme: 'temperate' }
-const ALLOWED_THEMES = new Set(['temperate', 'coastal', 'desert', 'nordic', 'neon'])
+const ALLOWED_THEMES = new Set(['temperate', 'coastal', 'desert', 'nordic', 'neon', 'cyberpunk', 'solarpunk', 'blueprint', 'crt'])
 
 export function readConfig(configDir = process.env.CORNERCASE_PLUGIN_CONFIG) {
   if (!configDir) return { ...DEFAULT_CONFIG }

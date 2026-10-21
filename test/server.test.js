@@ -39,6 +39,33 @@ test('serves city.html, runs /act once, refuses cross-origin, 404s the rest', as
   }
 })
 
+test('GET /state returns the injected live data; 404 when readState yields null', async () => {
+  const dir = tmp()
+  writeFileSync(join(dir, 'city.html'), 'x')
+  const live = await new Promise((resolve) => {
+    const s = startCityServer({
+      dir, runAct: () => ({ ok: true }), readState: () => ({ scene: {}, readout: { population: 42 } }),
+      basePort: 0, onReady: (url) => resolve({ url, s }),
+    })
+  })
+  try {
+    const r = await fetch(live.url + '/state')
+    assert.equal(r.status, 200)
+    assert.equal((await r.json()).readout.population, 42)
+  } finally {
+    live.s.close()
+  }
+
+  const none = await new Promise((resolve) => {
+    const s = startCityServer({ dir: tmp(), runAct: () => ({}), readState: () => null, basePort: 0, onReady: (url) => resolve({ url, s }) })
+  })
+  try {
+    assert.equal((await fetch(none.url + '/state')).status, 404)
+  } finally {
+    none.s.close()
+  }
+})
+
 test('GET / is 404 before any city is rendered', async () => {
   const { url, server } = await boot(tmp(), () => ({ ok: true }))
   try {

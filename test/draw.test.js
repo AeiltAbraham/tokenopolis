@@ -41,15 +41,18 @@ function recCtx() {
 const city = (over = {}) => ({ peakScaleIndex: 4, scaleIndex: 4, condition: 'Thriving', vitality: 1, ...over })
 const scene = (over, seed = 7) => sceneFor(city(over), seed)
 
-test('five themes exist; unknown theme falls back to temperate', () => {
-  assert.deepEqual(Object.keys(THEMES).sort(), ['coastal', 'desert', 'neon', 'nordic', 'temperate'])
+test('all themes exist; unknown theme falls back to temperate', () => {
+  assert.deepEqual(
+    Object.keys(THEMES).sort(),
+    ['blueprint', 'coastal', 'crt', 'cyberpunk', 'desert', 'neon', 'nordic', 'solarpunk', 'temperate'],
+  )
   assert.equal(resolveTheme('does-not-exist'), THEMES.temperate)
 })
 
 test('z-order: ground → buildings → overlay (underground behind, landmarks between)', () => {
   const ctx = recCtx()
   drawCity(ctx, scene(), 'temperate', 0)
-  assert.deepEqual(ctx.layers, ['underground', 'ground', 'roads', 'buildings', 'landmarks', 'overlay'])
+  assert.deepEqual(ctx.layers, ['underground', 'ground', 'roads', 'buildings', 'landmarks', 'citizens', 'overlay'])
 })
 
 test('draws every building (at least one fill per building)', () => {

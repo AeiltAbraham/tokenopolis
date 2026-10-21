@@ -9,6 +9,9 @@ import { step } from './sim/condition.js'
 import { scaleName } from './sim/scale.js'
 import { writeArtifact } from './artifact.js'
 import { readClaudeDelta } from './claude-stats.js'
+import { updateProgress, newlyEarned } from './progress.js'
+import { appendEvent } from './history.js'
+import { notifyAchievements } from './notify.js'
 
 export function advance(prev, stats, now, claudeDelta = 0) {
   const afterStats = applyStatsRead(prev, stats, claudeDelta) // cornercase + Claude → monotonic builtTokens
@@ -17,7 +20,15 @@ export function advance(prev, stats, now, claudeDelta = 0) {
     { builtTokens: afterStats.sim.builtTokens, burn24h: afterStats.stats.burn24h, burn7d: afterStats.stats.burn7d },
     now,
   )
-  return { ...afterStats, sim: newSim }
+  // Chronicle: log scale-ups (one per level crossed) and ruin onset/clear. appendEvent caps + is immutable.
+  let history = prev.history ?? []
+  const oldScale = prev.sim?.scaleIndex ?? 0
+  for (let i = oldScale + 1; i <= newSim.scaleIndex; i++) history = appendEvent(history, { at: now, type: 'scale', label: scaleName(i) })
+  const oldRuin = prev.sim?.ruinProgress ?? 0
+  if (oldRuin === 0 && newSim.ruinProgress > 0) history = appendEvent(history, { at: now, type: 'ruin', label: 'Ruins' })
+  else if (oldRuin > 0 && newSim.ruinProgress === 0) history = appendEvent(history, { at: now, type: 'recovery', label: scaleName(newSim.scaleIndex) })
+  const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
+  return { ...afterStats, sim: newSim, history, progress }
 }
 
 export function tick(deps, now) {
@@ -34,12 +45,16 @@ export function tick(deps, now) {
   const stats = readStats() // cornercase; may be null (held last-known)
   const claudeDelta = readClaude() // Claude Code burn since last tick (0 if unavailable)
   const next = advance(prev, stats, now, claudeDelta)
-  const changed = JSON.stringify(prev.sim) !== JSON.stringify(next.sim)
+  const changed =
+    JSON.stringify(prev.sim) !== JSON.stringify(next.sim) ||
+    JSON.stringify(prev.history ?? []) !== JSON.stringify(next.history ?? []) ||
+    JSON.stringify(prev.progress ?? {}) !== JSON.stringify(next.progress ?? {})
   if (!changed) return { changed: false, state: prev }
 
   const rendered = { ...next, render: { ...next.render, lastRenderedAt: now } }
   saveState(dir, rendered)
   writeArtifact(rendered, config, dir)
+  notifyAchievements(newlyEarned(prev.progress, next.progress)) // best-effort cornercase toast; no-op outside cornercase
   logLine(
     dir,
     stats

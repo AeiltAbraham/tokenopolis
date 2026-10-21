@@ -11,8 +11,12 @@ import { sceneFor } from './render/scene.js'
 import { economyFor } from './sim/economy.js'
 import { scaleName } from './sim/scale.js'
 import { effectiveBuilt } from './sim/condition.js'
-import { COOLDOWN_MS } from './acts.js'
+import { COOLDOWN_MS, LEGENDARY } from './acts.js'
+import { achievementsFor, streakFor } from './progress.js'
+import { formatEvent, summarize } from './history.js'
 import { DEFAULT_CONFIG } from './config.js'
+
+const LEGENDARY_IDS = new Set(LEGENDARY.map((l) => l.id))
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -22,13 +26,17 @@ const stripModule = (src) => src.replace(/^\s*import[^\n]*\n/gm, '').replace(/^e
 function renderBundle() {
   const themes = stripModule(readFileSync(join(here, 'render', 'themes.js'), 'utf8'))
   const draw = stripModule(readFileSync(join(here, 'render', 'draw.js'), 'utf8'))
-  return `${themes}\n${draw}`
+  const ambient = stripModule(readFileSync(join(here, 'render', 'ambient.js'), 'utf8')) // day/night + weather
+  const postcard = stripModule(readFileSync(join(here, 'render', 'postcard.js'), 'utf8')) // PNG export
+  return `${themes}\n${draw}\n${ambient}\n${postcard}`
 }
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const fmt = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
-export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
+// The pure data model embedded in the artifact AND served by the live /state endpoint — ONE source of
+// truth, so the polling page re-renders in place with exactly what a full render would show.
+export function cityData(state, config = DEFAULT_CONFIG) {
   const sim = state.sim
   const scene = sceneFor(sim, state.citySeed)
   const eco = economyFor(effectiveBuilt(sim), sim.vitality) // size includes the "A Random Act" lever
@@ -45,13 +53,31 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     builtTokens: sim.builtTokens,
     lastMeaningfulBurnAt: sim.lastMeaningfulBurnAt,
   }
-  // The latest random act + when this render happened → the artifact animates & names it, but only
-  // when the render was triggered BY the act (fresh), so a routine re-render doesn't replay it.
+  // Latest act + when this render happened → animate & name it only when the render was triggered BY it.
   const act = state.acts?.last ?? null
   const renderedAt = state.render?.lastRenderedAt ?? null
-  // The cooldown stamp + window drive the always-visible "A Random Act" button's live countdown.
-  const lastActAt = state.acts?.lastActAt ?? null
-  const data = { scene, theme: config.theme, readout, act, renderedAt, lastActAt, cooldownMs: COOLDOWN_MS }
+  const lastActAt = state.acts?.lastActAt ?? null // drives the live cooldown countdown
+  const nowIso = renderedAt || sim.lastMeaningfulBurnAt || new Date().toISOString()
+  return {
+    scene,
+    theme: config.theme,
+    readout,
+    act,
+    renderedAt,
+    lastActAt,
+    cooldownMs: COOLDOWN_MS,
+    seed: state.citySeed,
+    actLegendary: !!(act && LEGENDARY_IDS.has(act.id)),
+    achievements: achievementsFor(state),
+    streak: streakFor(state, nowIso),
+    historyLines: (state.history ?? []).slice(0, 8).map(formatEvent),
+    tally: summarize(state.history ?? []),
+  }
+}
+
+export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
+  const data = cityData(state, config)
+  const { readout, achievements, streak, historyLines, tally } = data
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -100,6 +126,19 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   .act-btn[disabled] { cursor: default; opacity: .62; color: #aab4c4; background: linear-gradient(180deg,#242a38,#1a1f2b); border-color: rgba(255,255,255,.1); animation: none; }
   @keyframes actpulse { 0%{box-shadow:0 0 0 0 rgba(90,150,255,.45)} 70%{box-shadow:0 0 0 10px rgba(90,150,255,0)} 100%{box-shadow:0 0 0 0 rgba(90,150,255,0)} }
   .act-hint { margin: 6px 0 2px; font-size: 11px; opacity: .5; text-align: center; }
+  .act-btn.mini { font-size: 12px; padding: 8px 12px; margin: 10px 0 2px; background: linear-gradient(180deg,#232a3a,#191e2a); }
+  .act-btn.mini:hover { cursor: pointer; border-color: #6f9bff; }
+  #act-banner.legendary { border-color: #ffd76a; box-shadow: 0 0 26px rgba(255,215,106,.55), 0 8px 28px rgba(0,0,0,.45); }
+  #act-banner.legendary .ttl { color: #ffd76a; }
+  .panel { margin-top: 16px; }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; opacity: .7; margin: 0 0 7px; font-weight: 700; }
+  .panel .muted { opacity: .5; font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .badges { display: flex; flex-wrap: wrap; gap: 4px; }
+  .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.03); opacity: .42; }
+  .badge.on { opacity: 1; color: #8fe3a8; border-color: rgba(143,227,168,.4); background: rgba(143,227,168,.08); }
+  .chron { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow: auto; font-size: 12px; }
+  .chron li { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .chron li.muted { opacity: .5; border: 0; }
   @media (max-width: 640px) { #city { flex-basis: 100%; } }
 </style>
 </head>
@@ -111,18 +150,32 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 </div>
 <aside id="hud">
   <h1>${esc(readout.cityName)}</h1>
-  <div class="scale">${esc(readout.scaleName)} · <span class="cond">${esc(readout.condition)}</span></div>
+  <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
   <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
   <div class="act-hint">click to roll</div>
   <dl>
-    <dt>Population</dt><dd>${fmt(readout.population)}</dd>
-    <dt>Treasury</dt><dd>§${fmt(readout.treasury)}</dd>
-    <dt>Economy</dt><dd>${fmt(readout.economyRating)}</dd>
-    <dt>Vitality</dt><dd>${Math.round(readout.vitality * 100)}%</dd>
-    <dt>Peak</dt><dd>${esc(readout.peakScaleName)}</dd>
+    <dt>Population</dt><dd id="pop">${fmt(readout.population)}</dd>
+    <dt>Treasury</dt><dd id="treasury">§${fmt(readout.treasury)}</dd>
+    <dt>Economy</dt><dd id="economy">${fmt(readout.economyRating)}</dd>
+    <dt>Vitality</dt><dd id="vitality">${Math.round(readout.vitality * 100)}%</dd>
+    <dt>Peak</dt><dd id="peak">${esc(readout.peakScaleName)}</dd>
+    <dt>Streak</dt><dd>${streak.current}d · best ${streak.best}</dd>
     <dt>Latest act</dt><dd id="lastact">—</dd>
     <dt>Decay clock</dt><dd id="decay">—</dd>
   </dl>
+  <button id="postcard-btn" class="act-btn mini" type="button" title="Save a PNG postcard of your city">📸 Save postcard</button>
+  <section class="panel">
+    <h2>Achievements <span class="muted">${achievements.filter((a) => a.earned).length}/${achievements.length}</span></h2>
+    <div class="badges">${achievements
+      .map((a) => `<span class="badge ${a.earned ? 'on' : ''}" title="${esc(a.desc)}">${a.earned ? '✓' : '·'} ${esc(a.name)}</span>`)
+      .join('')}</div>
+  </section>
+  <section class="panel">
+    <h2>Chronicle <span class="muted">${tally.acts} acts · ${tally.disasters} disasters</span></h2>
+    <ul class="chron">${
+      historyLines.length ? historyLines.map((l) => `<li>${esc(l)}</li>`).join('') : '<li class="muted">nothing yet — roll an act</li>'
+    }</ul>
+  </section>
   <div class="theme">theme: ${esc(readout.theme)}</div>
 </aside>
 <script id="city-data" type="application/json">${dataJson}</script>
@@ -134,7 +187,16 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   var canvas = document.getElementById('city');
   var ctx = canvas.getContext('2d');
   var tick = 0;
-  function frame() { drawCity(ctx, DATA.scene, DATA.theme, tick++); }
+  function frame() {
+    var k = tick++;
+    drawCity(ctx, DATA.scene, DATA.theme, k);
+    // Living city: day/night tint + seasonal weather, keyed off the viewer's clock (screen-space overlays).
+    if (typeof drawDayNight === 'function') {
+      var now = Date.now();
+      drawDayNight(ctx, canvas.width, canvas.height, timeOfDay(now));
+      drawWeather(ctx, canvas.width, canvas.height, seasonOf(now), k);
+    }
+  }
   var decayEl = document.getElementById('decay');
   function updateDecay() {
     if (!decayEl) return;
@@ -152,7 +214,10 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     rainbow:{p:'rainbow'}, quake:{p:'dust',c:'#b9a089'}, twister:{p:'swirl',c:'#9aa6b2'},
     storm:{p:'swirl',c:'#6f86a6'}, meteor:{p:'meteor',c:'#ff8a3a'}, fire:{p:'fire',c:'#ff5a2a'},
     flood:{p:'water',c:'#3aa0ff'}, sinkhole:{p:'drop',c:'#05070c'}, blight:{p:'wash',c:'#7a8f4a'},
-    eclipse:{p:'dark',c:'#05070c'}, frost:{p:'frost',c:'#bfe8ff'}
+    eclipse:{p:'dark',c:'#05070c'}, frost:{p:'frost',c:'#bfe8ff'},
+    // legendary anims
+    goldrain:{p:'coins',c:'#ffe16a'}, utopia:{p:'aurora'}, phoenix:{p:'fire',c:'#ff7a2a'},
+    blackhole:{p:'swirl',c:'#140a28'}, alien:{p:'rainbow'}, timewarp:{p:'swirl',c:'#9a6aff'}
   };
   var SHAKE = { quake:1, meteor:1, twister:0.6, storm:0.4 };
   var PR = []; for (var pi=0; pi<72; pi++) PR.push([Math.random(),Math.random(),Math.random(),Math.random()]);
@@ -220,9 +285,10 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     var banner = document.getElementById('act-banner');
     if (banner && banner.querySelector) {
       var t = banner.querySelector('.ttl'), s = banner.querySelector('.sub');
-      if (t) t.textContent = (ICON[act.kind] || '') + '  ' + act.name;
+      var leg = DATA.actLegendary ? '★ ' : '';
+      if (t) t.textContent = leg + (ICON[act.kind] || '') + '  ' + act.name;
       if (s) s.textContent = act.blurb || '';
-      banner.className = act.kind;
+      banner.className = act.kind + (DATA.actLegendary ? ' legendary' : '');
       if (banner.classList) banner.classList.add('show');
     }
     if (typeof requestAnimationFrame === 'function') startFx(act);
@@ -263,11 +329,37 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     });
   }
 
+  // ---- Save postcard (PNG export) ----
+  var postcardBtn = document.getElementById('postcard-btn');
+  if (postcardBtn && postcardBtn.addEventListener && typeof exportPostcard === 'function') {
+    postcardBtn.addEventListener('click', function () { exportPostcard(document.getElementById('city'), DATA.readout); });
+  }
+  // ---- Live growth: poll /state and update the city + numbers in place (no reload) when served locally. ----
+  function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  function grp(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function applyLive(s) {
+    if (!s || !s.readout) return;
+    DATA.scene = s.scene; DATA.readout = s.readout; // the rAF loop redraws DATA.scene automatically
+    if (typeof s.lastActAt !== 'undefined') DATA.lastActAt = s.lastActAt;
+    setTxt('pop', grp(s.readout.population));
+    setTxt('treasury', '§' + grp(s.readout.treasury));
+    setTxt('economy', grp(s.readout.economyRating));
+    setTxt('vitality', Math.round(s.readout.vitality * 100) + '%');
+    setTxt('scaleName', s.readout.scaleName);
+    setTxt('cond', s.readout.condition);
+    setTxt('peak', s.readout.peakScaleName);
+    updateActBtn();
+  }
+  function pollLive() {
+    if (typeof fetch !== 'function') return;
+    fetch('/state').then(function (r) { return r.ok ? r.json() : null; }).then(applyLive).catch(function () {});
+  }
+
   frame();
   updateDecay();
   setupActs();
   updateActBtn();
-  if (typeof setInterval === 'function') setInterval(updateActBtn, 1000);
+  if (typeof setInterval === 'function') { setInterval(updateActBtn, 1000); setInterval(pollLive, 4000); }
   if (typeof requestAnimationFrame === 'function') {
     var lastT = 0;
     (function loop(t) { if (t - lastT > 140) { frame(); updateDecay(); lastT = t; } requestAnimationFrame(loop); })(0);

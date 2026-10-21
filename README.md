@@ -55,6 +55,12 @@ Then open your city from the **Open Tokenopolis** action (workspace or pane menu
   short animation. The service serves the city on `127.0.0.1` so the button can fire the act; off
   cooldown it glows "ready", otherwise it shows a live countdown. (Opened as a shared/static file
   the button falls back to the ⋯ menu's **A Random Act** action.)
+- **v0.4 "Living City":** the city is alive — **day/night** tinting and **seasonal weather** (snow,
+  leaves) keyed to the real clock, **citizens & traffic** moving on the streets, and **live growth**
+  (the open page polls `/state` and grows in place as you burn, no reload). Plus **achievements** +
+  an active-day **streak**, a **chronicle** of the city's events, **legendary** 1-in-25 acts with a
+  gold banner, four new **themes** (cyberpunk, solarpunk, blueprint, crt), a **Save postcard** PNG
+  export, and cornercase **milestone notifications**.
 
 See `spec.md` / `clarify.md` / `plan.md` for the full design. Build status: `progress.md`.
 
