@@ -139,10 +139,11 @@ export function drawCity(ctx, scene, theme, tick = 0) {
 
   mark(ctx, 'buildings')
   const order = [...scene.buildings].sort((a, b) => a.gx + a.gy - (b.gx + b.gy))
-  for (const b of order) drawBuilding(ctx, b, p, ox, oy, tick, stale)
+  for (const b of order) drawBuilding(ctx, b, p, ox, oy, tick, stale, scene.infection ?? 0)
 
   mark(ctx, 'landmarks')
   for (const l of scene.landmarks) drawLandmark(ctx, l, p, ox, oy, tick)
+  drawOvergrowth(ctx, scene, ox, oy) // nature reclaims a stagnant/overrun city
 
   mark(ctx, 'citizens')
   drawCitizens(ctx, scene, p, ox, oy, tick, stale)
@@ -176,6 +177,7 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
   if (stale) return // a stale/decaying city empties its streets — and keeps frames still
   const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
   if (n < 1) return
+  if ((scene.infection ?? 0) >= 0.5) { drawShamblers(ctx, scene, ox, oy, tick); return } // outbreak: traffic gone, a few shamblers
   const count = Math.min(90, 8 + n * 5)
   for (let i = 0; i < count; i++) {
     const onX = srnd(i, 1) < 0.5 // move along the gx axis (true) or the gy axis (false)
@@ -195,7 +197,45 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
   }
 }
 
-function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
+// Outbreak: a few sickly-green figures shuffle the empty roads, slow and erratic.
+function drawShamblers(ctx, scene, ox, oy, tick) {
+  const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
+  if (n < 1) return
+  const count = Math.round(4 + (scene.infection ?? 0) * 12)
+  for (let i = 0; i < count; i++) {
+    const onX = srnd(i, 29) < 0.5
+    const lane = Math.round(srnd(i, 31) * n)
+    const dir = srnd(i, 41) > 0.5 ? 1 : -1
+    const wobble = Math.sin(tick * 0.09 + i) * 0.015
+    const f = (((srnd(i, 37) + dir * tick * 0.0025 + wobble) % 1) + 1) % 1
+    const pos = onX ? iso(f * n, lane, ox, oy) : iso(lane, f * n, ox, oy)
+    ctx.fillStyle = 'rgba(122,150,86,0.92)'
+    ctx.fillRect(pos.x - 1, pos.y - 2, 2, 3)
+  }
+}
+
+// Nature reclaims a stagnant or overrun city: moss patches on the ground + a scatter of saplings.
+function drawOvergrowth(ctx, scene, ox, oy) {
+  const og = scene.overgrowth || 0
+  if (og <= 0) return
+  const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
+  const patches = Math.round(og * n * n * 0.6)
+  for (let i = 0; i < patches; i++) {
+    const gx = Math.floor(srnd(i, 7) * n)
+    const gy = Math.floor(srnd(i, 11) * n)
+    const pt = iso(gx, gy, ox, oy)
+    ctx.fillStyle = rgba('#3f7a34', 0.5)
+    ctx.beginPath()
+    ctx.arc(pt.x, pt.y + 2, 4, 0, 6.3)
+    ctx.fill()
+    if (srnd(i, 13) > 0.5) {
+      ctx.fillStyle = rgba('#5ea34a', 0.65)
+      ctx.fillRect(pt.x - 1, pt.y - 4, 2, 5) // a sapling
+    }
+  }
+}
+
+function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
   const { x, y } = iso(b.gx, b.gy, ox, oy)
   const hw = TILE_W / 2
   const hh = TILE_H / 2
@@ -275,22 +315,34 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
     ctx.fillRect(x - 3, y - h - 3, 6, 3)
   }
 
-  // windows: a dim base grid always; lit windows add a glow + bloom (the animated geometry)
+  // windows: a dim base grid always; lit windows add a glow + bloom. A boarded facade shows planks
+  // instead, and an outbreak puts the lights out (the lit glow is suppressed).
   if (b.height > 0 && !b.collapsed) {
-    for (let f = 0; f < b.height; f++) {
-      const wy = y - f * FLOOR_H - 6
-      for (let c = 0; c < 3; c++) {
-        const lx = x - hw + 4 + c * 5
-        const rx = x + 3 + c * 5
-        ctx.fillStyle = rgba(shade(base, -64), 0.85)
-        ctx.fillRect(lx, wy, 2, 3)
-        ctx.fillStyle = rgba(shade(base, -84), 0.85)
-        ctx.fillRect(rx, wy, 2, 3)
-        if (!stale && lit(b.gx + c, b.gy, f, tick)) {
-          ctx.fillStyle = p.window
+    if (b.boarded) {
+      for (let f = 0; f < b.height; f++) {
+        const by = y - f * FLOOR_H - 6
+        ctx.fillStyle = rgba(shade(base, -42), 0.92)
+        ctx.fillRect(x - hw + 3, by - 1, hw - 3, 2)
+        ctx.fillStyle = rgba(shade(base, -70), 0.92)
+        ctx.fillRect(x + 1, by + 1, hw - 3, 2)
+      }
+    } else {
+      const lightsOn = !stale && infection < 0.5
+      for (let f = 0; f < b.height; f++) {
+        const wy = y - f * FLOOR_H - 6
+        for (let c = 0; c < 3; c++) {
+          const lx = x - hw + 4 + c * 5
+          const rx = x + 3 + c * 5
+          ctx.fillStyle = rgba(shade(base, -64), 0.85)
           ctx.fillRect(lx, wy, 2, 3)
-          ctx.fillStyle = rgba(p.window, 0.3)
-          ctx.fillRect(lx - 2, wy - 2, 6, 7) // bloom
+          ctx.fillStyle = rgba(shade(base, -84), 0.85)
+          ctx.fillRect(rx, wy, 2, 3)
+          if (lightsOn && lit(b.gx + c, b.gy, f, tick)) {
+            ctx.fillStyle = p.window
+            ctx.fillRect(lx, wy, 2, 3)
+            ctx.fillStyle = rgba(p.window, 0.3)
+            ctx.fillRect(lx - 2, wy - 2, 6, 7) // bloom
+          }
         }
       }
     }

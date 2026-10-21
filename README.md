@@ -65,6 +65,11 @@ Then open your city from the **Open Tokenopolis** action (workspace or pane menu
   by burn source — Claude Code ("tech") vs cornercase agents ("industry"), tinted on the rooftops —
   and **personalization**: a `flag` emoji by the city name, custom district names, and an optional
   ambient-**audio** toggle (muted by default). Config keys: `cityName`, `theme`, `flag`, `districts`.
+- **v0.6 — Survival:** an **Outbreak** you fight back by burning — the city darkens, streets empty, a
+  few shamblers roam, and severity falls as you work (an **Outbreak contained** chronicle entry + a
+  **Quarantine Lifted** achievement when you clear it; a rare **Zombie Outbreak** legendary is the
+  severe version). Plus a gritty **wasteland** theme and deeper decay — **boarded windows** and
+  **overgrowth** reclaiming an idle city. All original work (no third-party game assets or code).
 
 See `spec.md` / `clarify.md` / `plan.md` for the full design. Build status: `progress.md`.
 

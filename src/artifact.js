@@ -11,6 +11,7 @@ import { sceneFor } from './render/scene.js'
 import { economyFor } from './sim/economy.js'
 import { scaleName } from './sim/scale.js'
 import { effectiveBuilt } from './sim/condition.js'
+import { INFECTION } from './tuning.js'
 import { COOLDOWN_MS, LEGENDARY } from './acts.js'
 import { achievementsFor, streakFor } from './progress.js'
 import { formatEvent, summarize } from './history.js'
@@ -42,7 +43,8 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   const claude = state.claude?.cumulativeTokens ?? 0
   const sourceMix = sim.builtTokens > 0 ? Math.max(0, Math.min(1, claude / sim.builtTokens)) : 0.5
   const scene = sceneFor(sim, state.citySeed, sourceMix)
-  const eco = economyFor(effectiveBuilt(sim), sim.vitality) // size includes the "A Random Act" lever
+  const infection = sim.infection?.severity ?? 0 // the Outbreak drags population + economy down
+  const eco = economyFor(effectiveBuilt(sim), sim.vitality * (1 - INFECTION.economyDrop * infection))
   const readout = {
     cityName: config.cityName,
     theme: config.theme,
@@ -78,12 +80,13 @@ export function cityData(state, config = DEFAULT_CONFIG) {
     sourceMix,
     districts: config.districts ?? { tech: 'Tech', ops: 'Industry' },
     flag: config.flag ?? '',
+    infection,
   }
 }
 
 export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   const data = cityData(state, config)
-  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag } = data
+  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection } = data
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -134,6 +137,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   .act-hint { margin: 6px 0 2px; font-size: 11px; opacity: .5; text-align: center; }
   #conn { margin: 8px 0 2px; padding: 7px 10px; border-radius: 8px; background: rgba(255,120,80,.12); border: 1px solid rgba(255,140,90,.4); color: #ffb49a; font-size: 11px; text-align: center; line-height: 1.3; }
   #conn[hidden] { display: none; }
+  #infected { margin: 0 0 12px; padding: 7px 10px; border-radius: 8px; background: rgba(120,160,70,.14); border: 1px solid rgba(150,190,90,.5); color: #c6e89a; font-size: 12px; font-weight: 600; text-align: center; letter-spacing: .02em; }
+  #infected[hidden] { display: none; }
   .act-btn.mini { font-size: 12px; padding: 8px 12px; margin: 10px 0 2px; background: linear-gradient(180deg,#232a3a,#191e2a); }
   .act-btn.mini:hover { cursor: pointer; border-color: #6f9bff; }
   #act-banner.legendary { border-color: #ffd76a; box-shadow: 0 0 26px rgba(255,215,106,.55), 0 8px 28px rgba(0,0,0,.45); }
@@ -184,6 +189,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 <aside id="hud">
   <h1>${flag ? esc(flag) + ' ' : ''}${esc(readout.cityName)}</h1>
   <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
+  <div id="infected" class="infected"${infection > 0 ? '' : ' hidden'}>☣ Outbreak — ${Math.round(infection * 100)}% · burn to clear</div>
   <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
   <div class="act-hint">click to roll</div>
   <div id="conn" role="status" hidden></div>
@@ -232,6 +238,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
       drawDayNight(ctx, canvas.width, canvas.height, timeOfDay(now));
       drawWeather(ctx, canvas.width, canvas.height, seasonOf(now), k);
     }
+    if (typeof drawInfection === 'function') drawInfection(ctx, canvas.width, canvas.height, (DATA.scene && DATA.scene.infection) || 0);
   }
   var decayEl = document.getElementById('decay');
   function updateDecay() {
@@ -464,6 +471,12 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     setTxt('scaleName', s.readout.scaleName);
     setTxt('cond', s.readout.condition);
     setTxt('peak', s.readout.peakScaleName);
+    var infEl = document.getElementById('infected');
+    if (infEl) {
+      var inf = s.infection || 0;
+      if (inf > 0) { infEl.textContent = '☣ Outbreak — ' + Math.round(inf * 100) + '% · burn to clear'; infEl.hidden = false; }
+      else infEl.hidden = true;
+    }
     updateActBtn();
   }
   function pollLive() {

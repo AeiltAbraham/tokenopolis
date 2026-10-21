@@ -25,6 +25,7 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
       lastMeaningfulBurnAt: installedAt,
       ruinProgress: 0,
       recoveryCredit: 0,
+      infection: { severity: 0, startedAt: null }, // the Outbreak: 0 = healthy, 1 = overrun
     },
     claude: { cumulativeTokens: 0 }, // Claude Code (desktop/CLI) burn, counted forward from install
     // "A Random Act" deck: usedIds drawn-without-replacement (reset when all 50 used), lastActAt =

@@ -127,3 +127,17 @@ export function drawWeather(ctx, w, h, season, tick) {
     }
   }
 }
+
+// The Outbreak: a sickly green-brown haze over the city, deepening at the edges, scaled by severity.
+// Screen-space only; severity ∈ [0,1]. A no-op at 0 so a healthy city is untouched.
+export function drawInfection(ctx, w, h, severity) {
+  const s = severity > 0 ? (severity < 1 ? severity : 1) : 0
+  if (s <= 0) return
+  const vig = ctx.createRadialGradient(w / 2, h * 0.55, h * 0.18, w / 2, h * 0.55, w * 0.72)
+  vig.addColorStop(0, 'rgba(90,110,56,0)')
+  vig.addColorStop(1, `rgba(64,84,40,${(0.5 * s).toFixed(3)})`)
+  ctx.fillStyle = vig
+  ctx.fillRect(0, 0, w, h)
+  ctx.fillStyle = `rgba(120,138,78,${(0.1 * s).toFixed(3)})` // faint overall sickly cast
+  ctx.fillRect(0, 0, w, h)
+}

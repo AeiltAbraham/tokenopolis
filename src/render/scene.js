@@ -60,6 +60,11 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
   // Structural stress is the WORSE of slow decay (condition) and a sudden fall below peak — so a
   // disaster ("A Random Act") visibly wrecks buildings even while the condition label is still healthy.
   const stress = Math.max(conditionDamage, collapseRatio)
+  // Survival signals (structural, grayscale-safe): windows get boarded up when the city is decaying
+  // OR infected; nature reclaims it (overgrowth) when it's left stagnant or overrun by an outbreak.
+  const infection = clamp01(cityState.infection?.severity ?? 0)
+  const boardRatio = Math.max(conditionDamage, infection)
+  const overgrowth = clamp01(Math.max((condIndex - condIndexOf('Stagnant')) / 3, infection * 0.7))
 
   // Conceptual building count can be astronomical; LOD caps the RENDERED primitives.
   const conceptual = Math.round(SCENE.baseBuildings * SCENE.buildingGrowth ** sizeIndex)
@@ -83,6 +88,7 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
     const collapsed = dmgRnd < collapseRatio // buildings in the fallen gap become rubble (decay OR disaster)
     // District (burn source): 3×3 blocks share a district → visible clusters; size scales with the mix.
     const district = dhash(Math.floor(gx / 3) * 131 + Math.floor(gy / 3), (citySeed >>> 0) ^ 0x51ed51ed) < techShare ? 'tech' : 'ops'
+    const boarded = !collapsed && baseHeight > 0 && dmgRnd < boardRatio // windows planked over (decay/outbreak)
     buildings.push({
       gx,
       gy,
@@ -92,6 +98,7 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
       density: aggregated ? Math.round(perPrimitive) : 1,
       damage,
       collapsed,
+      boarded,
     })
   }
 
@@ -125,6 +132,8 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
     vitality: cityState.vitality ?? 0,
     conditionDamage,
     ruined,
+    overgrowth,
+    infection,
     footprint: { cols: side, rows: Math.ceil(count / side) },
     buildings,
     underground,

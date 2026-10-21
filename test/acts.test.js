@@ -224,3 +224,13 @@ test('drawChoice offers two distinct common acts from the remaining deck without
   assert.ok(options.every((o) => !used.includes(o.id)), 'options come from the remaining deck')
   assert.deepEqual(used, before, 'drawChoice does not consume / mutate the deck')
 })
+
+test('the Outbreak act seeds the infection; the Zombie Outbreak legendary seeds it higher', () => {
+  const s = cityState()
+  const outbreak = ACTS.find((a) => a.id === 'outbreak')
+  const o = applyAct(s, outbreak, [outbreak.id], FIXED)
+  assert.ok(o.sim.infection.severity >= 0.5, 'the outbreak act starts an infection')
+  const zombie = LEGENDARY.find((a) => a.id === 'zombie-outbreak')
+  const z = applyAct(s, zombie, [], FIXED)
+  assert.ok(z.sim.infection.severity > o.sim.infection.severity, 'the legendary outbreak is more severe')
+})

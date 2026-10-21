@@ -130,3 +130,14 @@ test('30-day arc: Thriving → decline → Ruins → fast recovery to peak, in o
   assert.ok(condIdx(recovered.condition) < condIdx('Ruins'))
   assert.equal(recovered.scaleIndex, recovered.peakScaleIndex)
 })
+
+test('infection: burning clears it, idle worsens it, zero ends the episode', () => {
+  const infected = { ...FRESH, builtTokens: 30_000_000, infection: { severity: 0.5, startedAt: iso(0) } }
+  const burned = step(infected, { builtTokens: 31_000_000, burn24h: 0, burn7d: 0 }, iso(0.0007))
+  assert.ok(burned.infection.severity < 0.5, 'a meaningful burn fights the infection down')
+  const idle = step(infected, { builtTokens: 30_000_000, burn24h: 0, burn7d: 0 }, iso(0.04))
+  assert.ok(idle.infection.severity > 0.5, 'neglect lets it spread')
+  const cleared = step({ ...infected, infection: { severity: 0.1, startedAt: iso(0) } }, { builtTokens: 31_000_000, burn24h: 0, burn7d: 0 }, iso(0.0007))
+  assert.equal(cleared.infection.severity, 0)
+  assert.equal(cleared.infection.startedAt, null)
+})

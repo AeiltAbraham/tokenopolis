@@ -10,7 +10,7 @@
 // The deck is drawn without replacement: every one of the 50 occurs exactly once before any repeats,
 // then the used list clears and the deck is whole again.
 
-import { SCALE } from './tuning.js'
+import { SCALE, INFECTION } from './tuning.js'
 import { step, effectiveBuilt } from './sim/condition.js'
 
 export const COOLDOWN_MS = 60 * 60 * 1000 // one act per hour
@@ -55,7 +55,7 @@ export const ACTS = [
   { id: 'great-flood', name: 'Great Flood', kind: 'disaster', anim: 'flood', mag: -0.25, blurb: 'The river breaks its banks; streets go under.' },
   { id: 'wildfire', name: 'Wildfire', kind: 'disaster', anim: 'fire', mag: -0.3, blurb: 'Flames leap block to block on a dry wind.' },
   { id: 'recession', name: 'Recession', kind: 'disaster', anim: 'blight', mag: -0.22, blurb: 'Markets slump; cranes freeze mid-build.' },
-  { id: 'outbreak', name: 'Outbreak', kind: 'disaster', anim: 'blight', mag: -0.26, blurb: 'Quarantine empties the streets; trade stalls.' },
+  { id: 'outbreak', name: 'Outbreak', kind: 'disaster', anim: 'blight', mag: -0.26, blurb: 'Quarantine empties the streets; trade stalls.', infect: INFECTION.onsetCommon },
   { id: 'sinkhole', name: 'Sinkhole', kind: 'disaster', anim: 'sinkhole', mag: -0.2, blurb: 'A whole block drops into the dark.' },
   { id: 'tornado', name: 'Tornado', kind: 'disaster', anim: 'twister', mag: -0.24, blurb: 'A funnel scours a ragged path through town.' },
   { id: 'blackout', name: 'City Blackout', kind: 'disaster', anim: 'eclipse', mag: -0.12, blurb: 'The grid fails; the city goes dark and quiet.' },
@@ -90,6 +90,7 @@ export const LEGENDARY = [
   { id: 'black-hole', name: 'Black Hole', kind: 'disaster', anim: 'blackhole', mag: -1.0, blurb: 'A singularity blooms downtown and swallows whole districts.', tier: 'legendary' },
   { id: 'alien-harvest', name: 'Alien Harvest', kind: 'disaster', anim: 'alien', mag: -0.8, blurb: 'Silent craft lift entire blocks into the sky and vanish.', tier: 'legendary' },
   { id: 'time-warp', name: 'Time Warp', kind: 'disaster', anim: 'timewarp', mag: -0.6, blurb: 'A rift unbuilds decades of progress in a single shuddering instant.', tier: 'legendary' },
+  { id: 'zombie-outbreak', name: 'Zombie Outbreak', kind: 'disaster', anim: 'blight', mag: -0.6, blurb: 'The dead walk; the living barricade the streets and wait for dawn.', tier: 'legendary', infect: INFECTION.onsetLegendary },
 ]
 
 // performAct rolls this FIRST (one rng() call). A hit (< LEGENDARY_CHANCE) swaps the common draw for a
@@ -154,11 +155,15 @@ export function applyAct(state, act, usedIds, nowIso) {
     actTokens = -(sim.builtTokens ?? 0)
     rawDelta = actTokens - (sim.actTokens ?? 0)
   }
-  const newSim = step(
+  const stepped = step(
     { ...sim, actTokens },
     { builtTokens: sim.builtTokens ?? 0, burn24h: state.stats?.burn24h ?? 0, burn7d: state.stats?.burn7d ?? 0 },
     nowIso,
   )
+  // An outbreak act seeds the infection (raising it to onset; never lowering an existing one).
+  const newSim = act.infect
+    ? { ...stepped, infection: { severity: Math.max(stepped.infection?.severity ?? 0, act.infect), startedAt: nowIso } }
+    : stepped
   const occurrence = { id: act.id, name: act.name, kind: act.kind, anim: act.anim, blurb: act.blurb, at: nowIso, delta: rawDelta, tier: act.tier ?? 'common' }
   return { ...state, sim: newSim, acts: { usedIds, lastActAt: nowIso, last: occurrence } }
 }

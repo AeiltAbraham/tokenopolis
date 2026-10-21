@@ -46,7 +46,7 @@ test('catalog: ~12 well-formed achievements with unique ids and the required cov
 })
 
 test('defaultProgress is the inert, safe-default shape', () => {
-  assert.deepEqual(defaultProgress(), { earned: {}, activeDays: [], streakBest: 0, sawRuins: false })
+  assert.deepEqual(defaultProgress(), { earned: {}, activeDays: [], streakBest: 0, sawRuins: false, sawOutbreak: false })
   // Two calls do not share references (no accidental shared mutable state).
   const a = defaultProgress()
   a.earned['x'] = '1'
@@ -190,9 +190,16 @@ test('updateProgress is pure: it does not mutate the input state or progress', (
 
 test('handles a state with no progress block at all (safe defaults)', () => {
   const next = updateProgress(makeState({ sim: { peakScaleIndex: 1 } }), iso(0))
-  assert.deepEqual(Object.keys(next).sort(), ['activeDays', 'earned', 'sawRuins', 'streakBest'])
+  assert.deepEqual(Object.keys(next).sort(), ['activeDays', 'earned', 'sawOutbreak', 'sawRuins', 'streakBest'])
   assert.equal(next.earned['reach-village'], iso(0))
   // achievementsFor / streakFor also tolerate a bare state.
   assert.equal(achievementsFor({ sim: {} }).length, ACHIEVEMENTS.length)
   assert.deepEqual(streakFor({}, iso(0)), { current: 0, best: 0 })
+})
+
+test('quarantine-lifted: earned on the falling edge of an outbreak, not otherwise', () => {
+  const after = updateProgress(makeState({ sim: { infection: { severity: 0 } }, progress: { ...defaultProgress(), sawOutbreak: true } }), iso(0))
+  assert.ok(after.earned['quarantine-lifted'], 'cleared after an outbreak -> earned')
+  const never = updateProgress(makeState({ sim: { infection: { severity: 0 } } }), iso(0))
+  assert.ok(!never.earned['quarantine-lifted'], 'never infected -> not earned')
 })

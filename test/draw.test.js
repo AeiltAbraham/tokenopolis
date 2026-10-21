@@ -44,7 +44,7 @@ const scene = (over, seed = 7) => sceneFor(city(over), seed)
 test('all themes exist; unknown theme falls back to temperate', () => {
   assert.deepEqual(
     Object.keys(THEMES).sort(),
-    ['blueprint', 'coastal', 'crt', 'cyberpunk', 'desert', 'neon', 'nordic', 'solarpunk', 'temperate'],
+    ['blueprint', 'coastal', 'crt', 'cyberpunk', 'desert', 'neon', 'nordic', 'solarpunk', 'temperate', 'wasteland'],
   )
   assert.equal(resolveTheme('does-not-exist'), THEMES.temperate)
 })

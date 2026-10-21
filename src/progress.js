@@ -33,6 +33,7 @@ export const ACHIEVEMENTS = [
   { id: 'burn-1b', name: 'Billionaire Builder', desc: 'You burned 1,000,000,000 tokens into the city.' },
   { id: 'streak-7', name: 'Week of Fire', desc: 'Seven straight days of meaningful burn.' },
   { id: 'rose-from-ruins', name: 'Phoenix', desc: 'You rebuilt a city that had crumbled into ruins.' },
+  { id: 'quarantine-lifted', name: 'Quarantine Lifted', desc: 'You cleared an outbreak from the city.' },
 ]
 
 // Threshold gates on monotonic live fields. These are re-derived from state every call.
@@ -49,7 +50,7 @@ const BURN_GATES = {
 }
 
 // The point-in-time ids — earned is known ONLY from the persisted map, never re-derived live.
-const POINT_IN_TIME = new Set(['first-boon', 'first-disaster', 'survived-legendary', 'cycled-deck', 'streak-7', 'rose-from-ruins'])
+const POINT_IN_TIME = new Set(['first-boon', 'first-disaster', 'survived-legendary', 'cycled-deck', 'streak-7', 'rose-from-ruins', 'quarantine-lifted'])
 
 // The persisted progress block. Safe, inert defaults: the integrator seeds this into initState() and
 // updateProgress() always returns a complete block of this exact shape.
@@ -59,6 +60,7 @@ export function defaultProgress() {
     activeDays: [], // 'YYYY-MM-DD' (UTC) days that saw a meaningful burn — the streak's source data
     streakBest: 0, // longest consecutive active-day run ever observed (never decreases)
     sawRuins: false, // true while the city is in a ruined episode (ruinProgress was > 0 last tick)
+    sawOutbreak: false, // true while an outbreak is active (infection severity was > 0 last tick)
   }
 }
 
@@ -83,6 +85,7 @@ function normalizeProgress(progress) {
     activeDays: Array.isArray(p.activeDays) ? p.activeDays.filter(isDayKey) : [],
     streakBest: Number.isFinite(p.streakBest) ? p.streakBest : 0,
     sawRuins: p.sawRuins === true,
+    sawOutbreak: p.sawOutbreak === true,
   }
 }
 
@@ -156,7 +159,7 @@ export function achievementsFor(state) {
 }
 
 // Did a point-in-time achievement's trigger condition fire on THIS tick?
-function eventTriggered(id, { acts, streakCurrent, roseFromRuins }) {
+function eventTriggered(id, { acts, streakCurrent, roseFromRuins, quarantineLifted }) {
   switch (id) {
     case 'first-boon':
       return acts?.last?.kind === 'boon'
@@ -170,6 +173,8 @@ function eventTriggered(id, { acts, streakCurrent, roseFromRuins }) {
       return streakCurrent >= STREAK_TARGET
     case 'rose-from-ruins':
       return roseFromRuins
+    case 'quarantine-lifted':
+      return quarantineLifted
     default:
       return false
   }
@@ -204,17 +209,23 @@ export function updateProgress(state, nowIso) {
   const roseFromRuins = prev.sawRuins === true && ruin === 0
   const sawRuins = ruin > 0
 
+  // 3b) outbreak episode: sawOutbreak mirrors "infection severity > 0"; the falling edge (was infected,
+  //     clear now) is the Quarantine Lifted moment (severity only reaches 0 by burning it down).
+  const infection = sim.infection?.severity ?? 0
+  const quarantineLifted = prev.sawOutbreak === true && infection === 0
+  const sawOutbreak = infection > 0
+
   // 4) stamp newly-earned achievements (keep any existing stamp untouched)
   const earned = { ...prev.earned }
   for (const a of ACHIEVEMENTS) {
     if (earned[a.id]) continue
     const now = POINT_IN_TIME.has(a.id)
-      ? eventTriggered(a.id, { acts, streakCurrent: current, roseFromRuins })
+      ? eventTriggered(a.id, { acts, streakCurrent: current, roseFromRuins, quarantineLifted })
       : liveEarned(a.id, state)
     if (now) earned[a.id] = nowIso
   }
 
-  return { earned, activeDays, streakBest: best, sawRuins }
+  return { earned, activeDays, streakBest: best, sawRuins, sawOutbreak }
 }
 
 // The ids present in next.earned but not in prev.earned, in ACHIEVEMENTS order (stable for notifying).

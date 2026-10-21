@@ -49,6 +49,15 @@ export const DECAY = {
   vitalityZeroDays: 10, // vitality decays linearly to 0 by this many idle days
 }
 
+// The Outbreak: a lingering infection you fight back by BURNING. Severity 0..1.
+export const INFECTION = {
+  onsetCommon: 0.55, // severity the common Outbreak act sets
+  onsetLegendary: 0.95, // severity the legendary Zombie Outbreak sets
+  clearPerBurn: 0.18, // severity cleared per active (meaningful-burn) tick — burning is how you survive
+  worsenPerIdleTick: 0.04, // severity gained per idle tick while infected — neglect lets it spread
+  economyDrop: 0.6, // at full severity, population + economy fall to (1 − this) of normal
+}
+
 export const SCENE = {
   baseBuildings: 6, // buildings drawn in a hamlet
   buildingGrowth: 2.1, // conceptual buildings multiply per scale step (visible density climb)

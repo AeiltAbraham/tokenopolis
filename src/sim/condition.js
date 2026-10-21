@@ -6,7 +6,7 @@
 // `burn24h` / `burn7d` are accepted for interface stability (the renderer/economy use them), but
 // the decay core derives activity from the builtTokens delta + elapsed time (the recency signal).
 
-import { DECAY, CONDITIONS } from '../tuning.js'
+import { DECAY, CONDITIONS, INFECTION } from '../tuning.js'
 import { scaleFor, tokensForIndex } from './scale.js'
 
 const DAY_MS = 86_400_000
@@ -83,6 +83,14 @@ export function step(prevSim, { builtTokens, burn24h, burn7d }, now) {
   const effectiveScaleIndex = Math.max(0, Math.min(peakScaleIndex - ruinProgress, builtIndex))
   const conditionIndex = conditionIndexFor(daysSinceBurn)
 
+  // Outbreak: severity falls when you burn (you fight it off), creeps up when you neglect it.
+  const prevInf = prev.infection ?? { severity: 0, startedAt: null }
+  let infSeverity = clamp01(prevInf.severity ?? 0)
+  if (infSeverity > 0) {
+    infSeverity = meaningful ? clamp01(infSeverity - INFECTION.clearPerBurn) : clamp01(infSeverity + INFECTION.worsenPerIdleTick)
+  }
+  const infection = { severity: infSeverity, startedAt: infSeverity > 0 ? (prevInf.startedAt ?? now) : null }
+
   return {
     builtTokens,
     actTokens,
@@ -93,5 +101,6 @@ export function step(prevSim, { builtTokens, burn24h, burn7d }, now) {
     lastMeaningfulBurnAt,
     ruinProgress,
     recoveryCredit,
+    infection,
   }
 }

@@ -27,6 +27,9 @@ export function advance(prev, stats, now, claudeDelta = 0) {
   const oldRuin = prev.sim?.ruinProgress ?? 0
   if (oldRuin === 0 && newSim.ruinProgress > 0) history = appendEvent(history, { at: now, type: 'ruin', label: 'Ruins' })
   else if (oldRuin > 0 && newSim.ruinProgress === 0) history = appendEvent(history, { at: now, type: 'recovery', label: scaleName(newSim.scaleIndex) })
+  // Outbreak contained: infection burned back down to zero.
+  const oldInf = prev.sim?.infection?.severity ?? 0
+  if (oldInf > 0 && (newSim.infection?.severity ?? 0) === 0) history = appendEvent(history, { at: now, type: 'milestone', label: 'Outbreak contained' })
   const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
   return { ...afterStats, sim: newSim, history, progress }
 }

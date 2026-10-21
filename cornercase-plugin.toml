@@ -1,6 +1,6 @@
 id = "tokenopolis"
 name = "Tokenopolis"
-version = "0.5.1"
+version = "0.6.0"
 description = "Grow a SimCity-style city as you burn tokens in cornercase — village to metropolis and back to ruins. Beta; contributions welcome (especially styling)."
 permissions = ["read-stats", "open-file"]
 

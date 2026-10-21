@@ -11,6 +11,7 @@ export const THEMES = {
   solarpunk: { sky: '#dff3d8', ground: '#9fc46b', road: '#b0b58f', roof: '#e0a43a', window: '#fff4c2', damage: '#2e2a18', rubble: '#8a8a6a', underground: '#2c3320', accent: '#f2b23a', zone: { R: '#d8c98a', C: '#8fc9a0', I: '#b4b884', park: '#5fb24a' } },
   blueprint: { sky: '#0c1f3a', ground: '#102a4a', road: '#2a6fb0', roof: '#5fd0ff', window: '#bfeeff', damage: '#05101f', rubble: '#1e3a5a', underground: '#050f1e', accent: '#5fd0ff', zone: { R: '#3f86c0', C: '#5fd0ff', I: '#4a6f99', park: '#4fb0b0' } },
   crt: { sky: '#02140a', ground: '#04240f', road: '#0a3a18', roof: '#39ff6a', window: '#9bffb0', damage: '#021005', rubble: '#14401f', underground: '#010d05', accent: '#39ff6a', zone: { R: '#2fd456', C: '#39ff6a', I: '#1f9a3f', park: '#7bff8a' } },
+  wasteland: { sky: '#8a8277', ground: '#6b6a4a', road: '#6f6c64', roof: '#8a4a2e', window: '#c9b97a', damage: '#241c14', rubble: '#6a6459', underground: '#2a241c', accent: '#c98a2a', zone: { R: '#9a8a6a', C: '#7f8a78', I: '#8a7656', park: '#6a7a46' } },
 }
 
 export function resolveTheme(name) {
