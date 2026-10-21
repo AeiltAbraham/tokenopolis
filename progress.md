@@ -126,3 +126,46 @@ plus forward-compat `sim.recovery` (0; Phase 4 drives it) and `sim.singularityAt
 Artifact: `cityData` computes `effectiveTheme` (ascension/wasteland/config) used for both the render and the HUD, reframes the fallout readout (population = recovery × would-be, treasury 0, "Wasteland · Irradiated", a `recovery` field), and embeds era/recovery/climax. Boot: an `#era` HUD badge (⚡ Ascended / ☢️ Fallout — recovery N%, live-updated), a center-stage `#climax-banner`, and two bespoke one-time FX on #act-fx — `ascension` (gold radial bloom + chrome light-rays) and `fall` (detonation whiteout → shockwave ring → ash wash + screen shake) — played by `setupClimax()` on a fresh render and by `applyLive` when the fall lands on a poll while watching (the theme snaps live too). All guarded for the node:vm boot test.
 
 Tests: new `test/singularity.test.js` (11) — era defaults/backward-compat, Day-60 ascend, Day-61 raze, catch-up jump, fallout holds under burn, determinism, advance chronicle+climax for each transition and the double-jump, the climax-ordering guard, and the cityData theme snap + fallout readout. Updated the draw.js theme-list pin (+ascension) and refocused the gift-catalog-clamp test on Day 59 (pre-Singularity). Suite 164/164 (+11). Verified in-browser: Day-60 Terminus — gleaming ascension theme, ⚡ Singularity banner, Metropolis Thriving; Day-61 — wasteland rubble field, ☢️ Nuclear Downfall banner + nuclear-flash FX, Fallout HUD (recovery 0%, pop 0), chronicle headlining the Downfall then the Singularity. No console errors. Version → 0.9.0. Phase 4 (the Fallout flip: idle heals, Recovery HUD, rebirth loop) still to build.
+
+## 2026-10-21 — Ascension & Fallout arc, Phase 4: the Fallout flip (v1.0.0 — arc complete)
+
+The finale. The Fallout era is the decay clock run backwards. `condition.js falloutStep()` now implements
+recovery: `recovery = clamp01(daysIdle / RECOVERY.healDays)` (healDays 10, mirroring DECAY.vitalityZeroDays).
+A dedicated `recoveryAnchorAt` resets to now on the fall tick (`justFell`) and on any meaningful burn (a
+SETBACK — "burning sets back recovery"); idleness lets real time heal. As recovery climbs the wasteland
+rebuilds: `scaleIndex = round(recovery*peak)`, condition Buried→Thriving, `vitality = recovery`, ruins
+shrink. At `recovery >= 1` the city is REBORN — a fresh green Thriving build-era city sized by builtTokens
+(scaleIndex = peak = scaleFor(builtTokens)), recovery 0, `singularityAt` null (re-armed), actTokens 0.
+The loop closes: **build → ascend → fall → recover → reborn → build.**
+
+`tick.js advance()` computes `day` from `state.cycleStartAt` (falls back to install) so the gift/singularity
+calendar is PER-CYCLE. On rebirth (fromEra fallout→build) it resets `cycleStartAt = now` + `gifts.claimedThroughDay = 0`
+(earned gifts persist in the unlocked set as blueprints; banners replay), skips that tick's gift claim,
+chronicles `🌅 The City Reborn` (appended last), and stamps `climax {phase:'rebirth'}`. `cityData` now uses
+`cycleStartAt` for the HUD day (matching gifts); the fallout readout is recovery-scaled; `effectiveTheme`
+reverts to config.theme on rebirth. Artifact boot: a `#recovery-wrap` bar (width = recovery%), the `#era`
+badge shows live recovery%, the act hint reframes to "rest — burning sets back recovery" in fallout, and a
+`rebirth` climax (green bloom FX + "🌅 The City Reborn" banner) joins ascension/fall. `history.js` adds the
+`rebirth` type (🌅, legendaries tally). Backward-compatible (`cycleStartAt`/`recoveryAnchorAt` default via
+`??`; no migration). `state.cycleStartAt = installedAt` default.
+
+Tests: new `test/fallout.test.js` (9) — idle heals, burn resets, rebirth at 100% (fresh build sim),
+determinism, advance rebirth (chronicle + gift re-arm + cycle reset), the arc LOOP (2nd cycle ascends at its
+own Day 60), the recovery HUD, and the pre-Phase-4 backward-compat guard. Suite 172/172 (+8). (The
+`poke`-spawn wall-clock test is environmentally flaky under machine load — bare `node -e` cold-start alone
+is ~1.1s > its 1000ms budget; poke.mjs is byte-unchanged and imports no touched file, so it's node
+startup latency, not a regression.)
+
+Verified in-browser: a 50%-recovery healing wasteland (recovery bar half-filled, era badge "recovery 50%",
+reframed act hint, 156k survivors returned, city half-rebuilt) and the full rebirth (🌅 The City Reborn
+banner + green FX, reborn Metropolis back in the coastal theme, new "Day 1 · 59/59 gifts" cycle, Phoenix
+achievement earned, chronicle headlining Reborn→Downfall). No console errors.
+
+Adversarial 4-lens review (2 low findings, both fixed): (1) a pre-Phase-4 fallout state carried a stale
+build-era `lastMeaningfulBurnAt`, which would have instant-rebirthed on upgrade → fixed with the dedicated
+`recoveryAnchorAt` that backfills to now (+ guard test); (2) `setEra` never restored the "click to roll"
+act hint on a live rebirth → gated the hint write on an era CHANGE (also stops it clobbering transient
+cooldown hints). Version → 1.0.0. The Ascension & Fallout arc is complete.
+
+Also this session: wrote the live install's config (`~/.config/cornercase/plugins/config/tokenopolis/config.json`)
+to theme `coastal` (name kept "Tokenopolis") at the user's request, and poked the keeper to re-render.

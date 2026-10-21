@@ -64,6 +64,14 @@ export const SINGULARITY = {
   fallDay: 61, // the nuclear downfall lands — the city is razed and the era flips to 'fallout'
 }
 
+// The Fallout flip: the decay clock run backwards. In 'fallout', idleness HEALS (recovery 0→1 over
+// `healDays` of restraint) and a meaningful burn is a SETBACK (resets the recovery clock). At 1.0 the
+// city is reborn and the era loops back to 'build'. healDays mirrors DECAY.vitalityZeroDays (symmetry:
+// the same recency signal, read backwards — ~10 days of rest to bring the wasteland back).
+export const RECOVERY = {
+  healDays: 10, // idle days of restraint to heal the wasteland from razed (0) to reborn (1)
+}
+
 export const SCENE = {
   baseBuildings: 6, // buildings drawn in a hamlet
   buildingGrowth: 2.1, // conceptual buildings multiply per scale step (visible density climb)

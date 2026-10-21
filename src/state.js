@@ -37,7 +37,8 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
     acts: { usedIds: [], lastActAt: null, last: null },
     progress: defaultProgress(), // achievements earned + active-day streak (grow-from-zero)
     gifts: defaultGifts(), // daily gifts: one per day since install (Days 1..59), unlocked set accumulates
-    climax: null, // the Day-60 climax marker { phase: 'ascension'|'fall', at: ISO } — drives the one-time animation
+    climax: null, // the climax marker { phase: 'ascension'|'fall'|'rebirth', at: ISO } — drives the one-time animation
+    cycleStartAt: installedAt, // the current build→ascend→fall→recover cycle's day anchor (resets on rebirth)
     history: [], // chronicle: newest-first capped event log (acts, scale-ups, ruin/recovery, gifts, singularity)
     citySeed,
     render: { lastRenderedAt: null, artifactFile: 'city.html' },

@@ -16,7 +16,8 @@ import { notifyAchievements } from './notify.js'
 
 export function advance(prev, stats, now, claudeDelta = 0) {
   const afterStats = applyStatsRead(prev, stats, claudeDelta) // cornercase + Claude → monotonic builtTokens
-  const day = dayOf(prev.install?.installedAt, now) // days since install — drives gifts AND the Singularity
+  const cycleStart = prev.cycleStartAt ?? prev.install?.installedAt // the current cycle's anchor (resets on rebirth)
+  const day = dayOf(cycleStart, now) // days since the cycle began — drives gifts AND the Singularity
   const newSim = step(
     prev.sim, // PRIOR sim — so the delta is visible
     { builtTokens: afterStats.sim.builtTokens, burn24h: afterStats.stats.burn24h, burn7d: afterStats.stats.burn7d, day },
@@ -28,10 +29,12 @@ export function advance(prev, stats, now, claudeDelta = 0) {
   const fromEra = prev.sim?.era ?? 'build'
   const toEra = newSim.era ?? 'build'
   const climaxHappened = fromEra !== toEra
+  const rebirthHappened = fromEra === 'fallout' && toEra === 'build' // recovery hit 100% → the city returns
   let climax = prev.climax ?? null
   if (climaxHappened) {
     if (fromEra === 'build') climax = { phase: 'ascension', at: now }
     if (toEra === 'fallout') climax = { phase: 'fall', at: now }
+    if (rebirthHappened) climax = { phase: 'rebirth', at: now }
   } else {
     // Normal build-era chronicle: scale-ups (one per level crossed) + ruin onset/clear + outbreak cleared.
     const oldScale = prev.sim?.scaleIndex ?? 0
@@ -42,21 +45,28 @@ export function advance(prev, stats, now, claudeDelta = 0) {
     const oldInf = prev.sim?.infection?.severity ?? 0
     if (oldInf > 0 && (newSim.infection?.severity ?? 0) === 0) history = appendEvent(history, { at: now, type: 'milestone', label: 'Outbreak contained' })
   }
-  // Daily gifts: one per day since install (clamped to the 59-gift catalog; Day 60 is the climax).
-  // Claim any owed since the last tick — one chronicle line + a banner per gift; `last` stamps freshness.
+  // Daily gifts: one per day of the current cycle (clamped to the 59-gift catalog; Day 60 is the climax).
+  // Rebirth re-arms the calendar — earned gifts persist as blueprints and their daily banners replay.
   let gifts = prev.gifts ?? defaultGifts()
-  const claim = claimGiftsUpTo(gifts, day)
-  gifts = claim.gifts
-  for (const g of claim.claimed) history = appendEvent(history, { at: now, type: 'gift', label: `Day ${g.day}: ${g.name}` })
-  if (claim.claimed.length) gifts = { ...gifts, last: { ...gifts.last, at: now } }
+  let cycleStartAt = prev.cycleStartAt ?? null
+  if (rebirthHappened) {
+    cycleStartAt = now
+    gifts = { ...gifts, claimedThroughDay: 0 }
+  } else {
+    const claim = claimGiftsUpTo(gifts, day)
+    gifts = claim.gifts
+    for (const g of claim.claimed) history = appendEvent(history, { at: now, type: 'gift', label: `Day ${g.day}: ${g.name}` })
+    if (claim.claimed.length) gifts = { ...gifts, last: { ...gifts.last, at: now } }
+  }
   // The climax lines go in LAST so they stay newest-first — the headline sits atop the chronicle and a
   // big gift catch-up (Day 4 → Day 61 in one tick) can never bury or cap them out.
   if (climaxHappened) {
     if (fromEra === 'build') history = appendEvent(history, { at: now, type: 'singularity', label: 'AI Reached Consciousness' })
     if (toEra === 'fallout') history = appendEvent(history, { at: now, type: 'downfall', label: 'Nuclear Downfall' })
+    if (rebirthHappened) history = appendEvent(history, { at: now, type: 'rebirth', label: 'The City Reborn' })
   }
   const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
-  return { ...afterStats, sim: newSim, history, progress, gifts, climax }
+  return { ...afterStats, sim: newSim, history, progress, gifts, climax, cycleStartAt }
 }
 
 export function tick(deps, now) {
@@ -78,7 +88,8 @@ export function tick(deps, now) {
     JSON.stringify(prev.history ?? []) !== JSON.stringify(next.history ?? []) ||
     JSON.stringify(prev.progress ?? {}) !== JSON.stringify(next.progress ?? {}) ||
     JSON.stringify(prev.gifts ?? {}) !== JSON.stringify(next.gifts ?? {}) ||
-    JSON.stringify(prev.climax ?? null) !== JSON.stringify(next.climax ?? null)
+    JSON.stringify(prev.climax ?? null) !== JSON.stringify(next.climax ?? null) ||
+    (prev.cycleStartAt ?? null) !== (next.cycleStartAt ?? null)
   if (!changed) return { changed: false, state: prev }
 
   const rendered = { ...next, render: { ...next.render, lastRenderedAt: now } }

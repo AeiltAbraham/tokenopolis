@@ -82,7 +82,7 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   // Daily-gift readout: the current day since install, how many of the 59 gifts are unlocked, and the
   // latest one (with its claim time, so the page can flash a fresh-gift banner like it does for acts).
   const giftsState = state.gifts ?? {}
-  const day = dayOf(state.install?.installedAt, nowIso)
+  const day = dayOf(state.cycleStartAt ?? state.install?.installedAt, nowIso) // cycle day (resets on rebirth), matching gifts
   const giftCount = Object.keys(giftsState.unlocked || {}).length
   const lastGift = giftsState.last ?? null
   return {
@@ -185,6 +185,11 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   #climax-banner.ascension .ctitle { color: #ffe39a; }
   #climax-banner.fall { border: 1px solid rgba(255,120,70,.7); box-shadow: 0 0 60px rgba(255,100,60,.5), 0 12px 48px rgba(0,0,0,.6); }
   #climax-banner.fall .ctitle { color: #ff9a6a; }
+  #climax-banner.rebirth { border: 1px solid rgba(143,227,168,.7); box-shadow: 0 0 60px rgba(143,227,168,.5), 0 12px 48px rgba(0,0,0,.5); }
+  #climax-banner.rebirth .ctitle { color: #8fe3a8; }
+  #recovery-wrap { margin: -6px 0 12px; height: 7px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+  #recovery-wrap[hidden] { display: none; }
+  #recovery-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg,#c98a2a,#8fe3a8); transition: width .6s; }
   .act-btn.mini { font-size: 12px; padding: 8px 12px; margin: 10px 0 2px; background: linear-gradient(180deg,#232a3a,#191e2a); }
   .act-btn.mini:hover { cursor: pointer; border-color: #6f9bff; }
   #act-banner.legendary { border-color: #ffd76a; box-shadow: 0 0 26px rgba(255,215,106,.55), 0 8px 28px rgba(0,0,0,.45); }
@@ -251,8 +256,9 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   <div class="daygift" id="daygift">🎁 Day ${day} · ${giftCount}/${giftTotal} gifts${lastGift ? ' · <span class="gname">' + esc(lastGift.name) + '</span>' : ''}</div>
   <div id="infected" class="infected"${infection > 0 ? '' : ' hidden'}>☣ Outbreak — ${Math.round(infection * 100)}% · burn to clear</div>
   <div id="era" class="${esc(era)}"${era === 'build' ? ' hidden' : ''}>${era === 'ascendant' ? '⚡ Ascended — the Singularity' : era === 'fallout' ? `☢️ Fallout — recovery ${Math.round((readout.recovery ?? 0) * 100)}% · the land needs rest` : ''}</div>
+  <div id="recovery-wrap"${era === 'fallout' ? '' : ' hidden'}><div id="recovery-fill" style="width:${Math.round((readout.recovery ?? 0) * 100)}%"></div></div>
   <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
-  <div class="act-hint">click to roll</div>
+  <div class="act-hint">${era === 'fallout' ? 'rest — burning sets back recovery' : 'click to roll'}</div>
   <div id="conn" role="status" hidden></div>
   <button id="choose-btn" class="act-btn mini" type="button" title="Pick between two acts instead of a random roll">⚖️ Choose an act</button>
   <dl>
@@ -442,6 +448,17 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
         g.globalAlpha = 0.5 * Math.sin(Math.PI * p); g.strokeStyle = '#fff7df'; g.lineWidth = 2;
         for (var i = 0; i < 16; i++) { var ang = (i / 16) * 6.283 + p * 0.6; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(ang) * R, cy + Math.sin(ang) * R); g.stroke(); }
         g.globalAlpha = 1; g.lineWidth = 1;
+      } else if (phase === 'rebirth') {
+        var rx = w / 2, ry = h * 0.62, RR = (0.3 + 0.7 * Math.min(1, p * 1.3)) * w * 0.7;
+        var ra = 0.8 * Math.sin(Math.PI * Math.min(1, p * 1.05));
+        var rg = g.createRadialGradient(rx, ry, 0, rx, ry, RR);
+        rg.addColorStop(0, 'rgba(190,245,200,' + ra + ')');
+        rg.addColorStop(0.5, 'rgba(143,227,168,' + (ra * 0.55) + ')');
+        rg.addColorStop(1, 'rgba(143,227,168,0)');
+        g.fillStyle = rg; g.fillRect(0, 0, w, h);
+        g.globalAlpha = 0.7 * Math.sin(Math.PI * p); g.fillStyle = '#e4ffe9';
+        for (var m = 0; m < 50; m++) { var rm = PR[m], mx = w * rm[0], my = h - ((p * (0.4 + rm[1]) + rm[2]) % 1) * h; g.fillRect(mx, my, 2, 2); }
+        g.globalAlpha = 1;
       } else {
         if (p < 0.16) { g.globalAlpha = Math.min(1, p / 0.07); g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.globalAlpha = 1; }
         else {
@@ -463,6 +480,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     if (banner) {
       var t = banner.querySelector && banner.querySelector('.ctitle'), s = banner.querySelector && banner.querySelector('.csub');
       if (phase === 'ascension') { if (t) t.textContent = '⚡ The Singularity'; if (s) s.textContent = 'AI Reached Consciousness'; }
+      else if (phase === 'rebirth') { if (t) t.textContent = '🌅 The City Reborn'; if (s) s.textContent = 'The wasteland is green again — a new cycle begins.'; }
       else { if (t) t.textContent = '☢️ Nuclear Downfall'; if (s) s.textContent = 'The city is razed. Burn less — the land must rest.'; }
       banner.className = phase;
       if (banner.classList) banner.classList.add('show');
@@ -477,12 +495,23 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     var fresh = DATA.renderedAt && c.at && Math.abs(Date.parse(DATA.renderedAt) - Date.parse(c.at)) < FRESH_MS;
     if (fresh) showClimax(c.phase);
   }
-  // The era badge (⚡ Ascended / ☢️ Fallout) + its live recovery readout; hidden in the normal build era.
-  function setEra(era, recovery) {
-    var el = document.getElementById('era'); if (!el) return;
-    if (era === 'ascendant') { el.className = 'ascendant'; el.textContent = '⚡ Ascended — the Singularity'; el.hidden = false; }
-    else if (era === 'fallout') { el.className = 'fallout'; el.textContent = '☢️ Fallout — recovery ' + Math.round((recovery || 0) * 100) + '% · the land needs rest'; el.hidden = false; }
-    else { el.hidden = true; }
+  // The era badge (⚡ Ascended / ☢️ Fallout) + the Fallout recovery bar + act framing; all hidden/normal
+  // in the build era, live-updated as recovery climbs toward rebirth.
+  var lastEra = DATA.era; // only rewrite the act hint on an era CHANGE — restored on a live rebirth, and
+  function setEra(era, recovery) {           // never clobbering a transient cooldown/error hint between polls
+    var el = document.getElementById('era');
+    if (el) {
+      if (era === 'ascendant') { el.className = 'ascendant'; el.textContent = '⚡ Ascended — the Singularity'; el.hidden = false; }
+      else if (era === 'fallout') { el.className = 'fallout'; el.textContent = '☢️ Fallout — recovery ' + Math.round((recovery || 0) * 100) + '% · the land needs rest'; el.hidden = false; }
+      else { el.hidden = true; }
+    }
+    var wrap = document.getElementById('recovery-wrap'), fill = document.getElementById('recovery-fill');
+    if (wrap) {
+      if (era === 'fallout') { wrap.hidden = false; if (fill) fill.style.width = Math.round((recovery || 0) * 100) + '%'; }
+      else wrap.hidden = true;
+    }
+    if (actHint && era !== lastEra) actHint.textContent = era === 'fallout' ? 'rest — burning sets back recovery' : 'click to roll';
+    lastEra = era;
   }
 
   // ---- Ambient sound (muted by default; Web Audio starts on the first toggle click — autoplay-safe). ----
