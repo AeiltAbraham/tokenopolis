@@ -134,6 +134,7 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
     ruined,
     overgrowth,
     infection,
+    services: cityState.services ?? {}, // unlocked service gifts (harbour → boats, airport → planes, …)
     footprint: { cols: side, rows: Math.ceil(count / side) },
     buildings,
     underground,

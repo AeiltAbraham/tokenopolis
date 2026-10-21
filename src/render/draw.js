@@ -147,6 +147,8 @@ export function drawCity(ctx, scene, theme, tick = 0) {
 
   mark(ctx, 'citizens')
   drawCitizens(ctx, scene, p, ox, oy, tick, stale)
+  drawAnimals(ctx, scene, ox, oy, tick, stale)
+  drawVehicles(ctx, scene, ox, oy, tick, stale)
 
   mark(ctx, 'overlay')
   if (!stale && !scene.ruined) {
@@ -178,7 +180,9 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
   const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
   if (n < 1) return
   if ((scene.infection ?? 0) >= 0.5) { drawShamblers(ctx, scene, ox, oy, tick); return } // outbreak: traffic gone, a few shamblers
-  const count = Math.min(90, 8 + n * 5)
+  // Density scales with the metrics: a bigger, livelier city teems; a sleepy one goes quiet.
+  const vit = scene.vitality ?? 1
+  const count = Math.min(150, Math.round((8 + n * 6) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.12)))
   for (let i = 0; i < count; i++) {
     const onX = srnd(i, 1) < 0.5 // move along the gx axis (true) or the gy axis (false)
     const lane = Math.round(srnd(i, 2) * n) // which road (grid line)
@@ -231,6 +235,71 @@ function drawOvergrowth(ctx, scene, ox, oy) {
     if (srnd(i, 13) > 0.5) {
       ctx.fillStyle = rgba('#5ea34a', 0.65)
       ctx.fillRect(pt.x - 1, pt.y - 4, 2, 5) // a sapling
+    }
+  }
+}
+
+// Life above the streets: bird flocks drift the sky (more when lively) and a little wildlife wanders the
+// green ground (more when overgrown). Quiet when the city is stale or during an outbreak.
+function drawAnimals(ctx, scene, ox, oy, tick, stale) {
+  if (stale || (scene.infection ?? 0) >= 0.5) return
+  const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
+  if (n < 1) return
+  const W = ctx.canvas?.width ?? 960
+  const vit = scene.vitality ?? 1
+  const flocks = Math.round(2 + vit * 4)
+  ctx.strokeStyle = 'rgba(40,40,52,0.55)'
+  ctx.lineWidth = 1
+  for (let i = 0; i < flocks; i++) {
+    const r = srnd(i, 51), r2 = srnd(i, 57)
+    const baseY = 16 + r * 70
+    const cx = (((srnd(i, 53) * (W + 80)) + tick * (0.25 + r2 * 0.5)) % (W + 80)) - 40
+    const birds = 3 + Math.floor(r2 * 3)
+    for (let b = 0; b < birds; b++) {
+      const bx = cx + b * 7 - birds * 3
+      const by = baseY + Math.sin(tick * 0.05 + b + i) * 2 + (b % 2) * 3
+      ctx.beginPath()
+      ctx.moveTo(bx - 2, by)
+      ctx.lineTo(bx, by - 1.5)
+      ctx.lineTo(bx + 2, by)
+      ctx.stroke()
+    }
+  }
+  const critters = Math.round((scene.overgrowth ?? 0) * 6)
+  for (let i = 0; i < critters; i++) {
+    const pt = iso(Math.floor(srnd(i, 61) * n), Math.floor(srnd(i, 67) * n), ox, oy)
+    ctx.fillStyle = 'rgba(150,120,80,0.85)'
+    ctx.fillRect(pt.x + Math.sin(tick * 0.02 + i) * 3, pt.y - 2, 3, 2)
+  }
+}
+
+// Service traffic, each gated on its unlocked gift (Phase 2 populates scene.services): planes cross the
+// high sky when there's an airport; boats drift the offshore water when there's a harbour.
+function drawVehicles(ctx, scene, ox, oy, tick, stale) {
+  if (stale) return
+  const serv = scene.services || {}
+  const W = ctx.canvas?.width ?? 960
+  const H = ctx.canvas?.height ?? 640
+  if (serv.airport) {
+    for (let i = 0; i < 2; i++) {
+      const y = 28 + i * 22
+      const x = (((i * 420) + tick * (1.2 + i * 0.3)) % (W + 120)) - 60
+      ctx.fillStyle = 'rgba(222,228,238,0.9)'
+      ctx.fillRect(x, y, 10, 2)
+      ctx.fillRect(x + 3, y - 2, 3, 2)
+      ctx.fillStyle = tick % 2 ? '#ff5a5a' : 'rgba(255,90,90,0.3)'
+      ctx.fillRect(x, y, 1, 1)
+    }
+  }
+  if (serv.harbour) {
+    for (let i = 0; i < 4; i++) {
+      const r = srnd(i, 71)
+      const bx = 40 + ((srnd(i, 73) * (W - 80) + tick * (0.2 + r * 0.3)) % (W - 80))
+      const by = H - 38 - r * 46
+      ctx.fillStyle = 'rgba(70,92,112,0.9)'
+      ctx.fillRect(bx, by, 8, 3)
+      ctx.fillStyle = 'rgba(200,210,220,0.8)'
+      ctx.fillRect(bx + 3, by - 4, 1, 4) // mast
     }
   }
 }

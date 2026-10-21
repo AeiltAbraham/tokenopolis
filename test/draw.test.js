@@ -122,3 +122,11 @@ test('infrastructure renders: roads as strokes, one accent pip per unlocked high
   drawCity(ctx0, scene({ peakScaleIndex: 0, scaleIndex: 0 }), 'temperate', 0)
   assert.equal(pips(ctx0), 0, 'a hamlet has no higher infra tiers yet')
 })
+
+test('service vehicles render only when the service gift is unlocked', () => {
+  const base = recCtx()
+  drawCity(base, scene(), 'temperate', 3)
+  const withServ = recCtx()
+  drawCity(withServ, { ...scene(), services: { harbour: true, airport: true } }, 'temperate', 3)
+  assert.ok(withServ.ops.length > base.ops.length, 'a harbour + airport add boats and planes')
+})

@@ -60,3 +60,8 @@ test('LOD: primitive count stays ≤ 20,000 at every probe scale, and aggregates
   // Stress probe (T-014 territory): still bounded at an extreme scale.
   assert.ok(sceneFor(city({ peakScaleIndex: 128, scaleIndex: 128 }), 42).primitiveCount <= 20_000)
 })
+
+test('services pass through from cityState (they gate boats/planes)', () => {
+  assert.deepEqual(sceneFor(city({ services: { harbour: true } }), 1).services, { harbour: true })
+  assert.deepEqual(sceneFor(city(), 1).services, {})
+})
