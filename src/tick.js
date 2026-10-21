@@ -10,6 +10,7 @@ import { scaleName } from './sim/scale.js'
 import { writeArtifact } from './artifact.js'
 import { readClaudeDelta } from './claude-stats.js'
 import { updateProgress, newlyEarned } from './progress.js'
+import { dayOf, claimGiftsUpTo, defaultGifts } from './gifts.js'
 import { appendEvent } from './history.js'
 import { notifyAchievements } from './notify.js'
 
@@ -30,8 +31,16 @@ export function advance(prev, stats, now, claudeDelta = 0) {
   // Outbreak contained: infection burned back down to zero.
   const oldInf = prev.sim?.infection?.severity ?? 0
   if (oldInf > 0 && (newSim.infection?.severity ?? 0) === 0) history = appendEvent(history, { at: now, type: 'milestone', label: 'Outbreak contained' })
+  // Daily gifts: one per day since install (clamped to the 59-gift catalog). Claim any owed since the
+  // last tick — one chronicle line + a banner per gift; `last` carries the claim time for freshness.
+  const day = dayOf(prev.install?.installedAt, now)
+  let gifts = prev.gifts ?? defaultGifts()
+  const claim = claimGiftsUpTo(gifts, day)
+  gifts = claim.gifts
+  for (const g of claim.claimed) history = appendEvent(history, { at: now, type: 'gift', label: `Day ${g.day}: ${g.name}` })
+  if (claim.claimed.length) gifts = { ...gifts, last: { ...gifts.last, at: now } }
   const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
-  return { ...afterStats, sim: newSim, history, progress }
+  return { ...afterStats, sim: newSim, history, progress, gifts }
 }
 
 export function tick(deps, now) {
@@ -51,7 +60,8 @@ export function tick(deps, now) {
   const changed =
     JSON.stringify(prev.sim) !== JSON.stringify(next.sim) ||
     JSON.stringify(prev.history ?? []) !== JSON.stringify(next.history ?? []) ||
-    JSON.stringify(prev.progress ?? {}) !== JSON.stringify(next.progress ?? {})
+    JSON.stringify(prev.progress ?? {}) !== JSON.stringify(next.progress ?? {}) ||
+    JSON.stringify(prev.gifts ?? {}) !== JSON.stringify(next.gifts ?? {})
   if (!changed) return { changed: false, state: prev }
 
   const rendered = { ...next, render: { ...next.render, lastRenderedAt: now } }

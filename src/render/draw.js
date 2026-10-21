@@ -181,8 +181,10 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
   if (n < 1) return
   if ((scene.infection ?? 0) >= 0.5) { drawShamblers(ctx, scene, ox, oy, tick); return } // outbreak: traffic gone, a few shamblers
   // Density scales with the metrics: a bigger, livelier city teems; a sleepy one goes quiet.
+  // A festival gift (market, marathon, World's Fair) thickens the crowd.
   const vit = scene.vitality ?? 1
-  const count = Math.min(150, Math.round((8 + n * 6) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.12)))
+  const fest = scene.flags && scene.flags.festival ? 1.35 : 1
+  const count = Math.min(170, Math.round((8 + n * 6) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.12) * fest))
   for (let i = 0; i < count; i++) {
     const onX = srnd(i, 1) < 0.5 // move along the gx axis (true) or the gy axis (false)
     const lane = Math.round(srnd(i, 2) * n) // which road (grid line)
@@ -247,7 +249,9 @@ function drawAnimals(ctx, scene, ox, oy, tick, stale) {
   if (n < 1) return
   const W = ctx.canvas?.width ?? 960
   const vit = scene.vitality ?? 1
-  const flocks = Math.round(2 + vit * 4)
+  // An aviary gift fills the sky with more flocks; a zoo/aquarium gift puts wildlife on the ground.
+  const aviary = scene.flags && scene.flags.aviary ? 1.8 : 1
+  const flocks = Math.round((2 + vit * 4) * aviary)
   ctx.strokeStyle = 'rgba(40,40,52,0.55)'
   ctx.lineWidth = 1
   for (let i = 0; i < flocks; i++) {
@@ -265,7 +269,8 @@ function drawAnimals(ctx, scene, ox, oy, tick, stale) {
       ctx.stroke()
     }
   }
-  const critters = Math.round((scene.overgrowth ?? 0) * 6)
+  const zoo = scene.flags && scene.flags.zoo ? 5 : 0
+  const critters = Math.round((scene.overgrowth ?? 0) * 6) + zoo
   for (let i = 0; i < critters; i++) {
     const pt = iso(Math.floor(srnd(i, 61) * n), Math.floor(srnd(i, 67) * n), ox, oy)
     ctx.fillStyle = 'rgba(150,120,80,0.85)'
@@ -466,6 +471,59 @@ function drawLandmark(ctx, l, p, ox, oy, tick) {
     ctx.beginPath()
     ctx.arc(x, y - 6, 5, 0, 7)
     ctx.fill()
+  } else if (l.kind === 'spire') {
+    // cathedral / arcology spire — a tall, slender steeple
+    ctx.beginPath()
+    ctx.moveTo(x, y - 40)
+    ctx.lineTo(x - 3, y)
+    ctx.lineTo(x + 3, y)
+    ctx.closePath()
+    ctx.fill()
+  } else if (l.kind === 'dome') {
+    // library / university / opera / planetarium — a domed hall on a base
+    ctx.fillRect(x - 7, y - 6, 14, 6)
+    ctx.beginPath()
+    ctx.arc(x, y - 6, 7, Math.PI, 2 * Math.PI)
+    ctx.fill()
+  } else if (l.kind === 'observatory') {
+    // observatory — a short tower capped by a dome + blinking aperture
+    ctx.fillRect(x - 5, y - 18, 10, 18)
+    ctx.beginPath()
+    ctx.arc(x, y - 18, 6, Math.PI, 2 * Math.PI)
+    ctx.fill()
+    ctx.fillStyle = tick % 2 === 0 ? '#bfe8ff' : rgba('#bfe8ff', 0.3)
+    ctx.fillRect(x - 1, y - 20, 2, 2)
+  } else if (l.kind === 'lighthouse') {
+    // lighthouse — a tapered tower with a sweeping lantern
+    ctx.beginPath()
+    ctx.moveTo(x - 4, y)
+    ctx.lineTo(x - 2, y - 28)
+    ctx.lineTo(x + 2, y - 28)
+    ctx.lineTo(x + 4, y)
+    ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = tick % 2 === 0 ? '#ffe16a' : rgba('#ffe16a', 0.3)
+    ctx.fillRect(x - 2, y - 32, 4, 4)
+  } else if (l.kind === 'fountain') {
+    // town fountain / grand plaza — a basin with a jet
+    ctx.beginPath()
+    ctx.arc(x, y, 7, 0, 7)
+    ctx.fill()
+    ctx.fillStyle = rgba('#bfe8ff', 0.8)
+    ctx.fillRect(x - 1, y - 10, 2, 10)
+    ctx.fillRect(x - 5, y - 6, 2, 2)
+    ctx.fillRect(x + 3, y - 6, 2, 2)
+  } else if (l.kind === 'bridge') {
+    // river bridge — a shallow arch
+    ctx.strokeStyle = p.accent
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(x - 10, y)
+    ctx.lineTo(x - 5, y - 8)
+    ctx.lineTo(x + 5, y - 8)
+    ctx.lineTo(x + 10, y)
+    ctx.stroke()
+    ctx.lineWidth = 1
   } else {
     ctx.beginPath()
     ctx.arc(x, y - 8, 5, 0, 7)

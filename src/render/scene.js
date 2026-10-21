@@ -114,6 +114,12 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
   for (let m = 0; m < landmarkCount; m++) {
     landmarks.push({ gx: Math.floor(rnd() * side), gy: Math.floor(rnd() * side), kind: kinds[m % kinds.length] })
   }
+  // Gift landmarks (Phase 2): unlocked daily-gift structures, placed after the procedural ones so they
+  // never shift existing geometry. Marked `gift` so the renderer draws them as distinct glyphs.
+  const giftLandmarks = Array.isArray(cityState.giftLandmarks) ? cityState.giftLandmarks : []
+  for (const kind of giftLandmarks) {
+    landmarks.push({ gx: Math.floor(rnd() * side), gy: Math.floor(rnd() * side), kind, gift: true })
+  }
 
   const infrastructure = {
     roads: true, // the first tier — present from the hamlet
@@ -135,6 +141,7 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
     overgrowth,
     infection,
     services: cityState.services ?? {}, // unlocked service gifts (harbour → boats, airport → planes, …)
+    flags: cityState.giftFlags ?? {}, // gift entity boosts (aviary → birds, zoo → wildlife, festival → crowds)
     footprint: { cols: side, rows: Math.ceil(count / side) },
     buildings,
     underground,

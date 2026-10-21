@@ -65,3 +65,19 @@ test('services pass through from cityState (they gate boats/planes)', () => {
   assert.deepEqual(sceneFor(city({ services: { harbour: true } }), 1).services, { harbour: true })
   assert.deepEqual(sceneFor(city(), 1).services, {})
 })
+
+test('gift landmarks append to the procedural ones without shifting existing geometry', () => {
+  const plain = sceneFor(city({ peakScaleIndex: 5, scaleIndex: 5 }), 9)
+  const gifted = sceneFor(city({ peakScaleIndex: 5, scaleIndex: 5, giftLandmarks: ['lighthouse', 'dome'] }), 9)
+  // Buildings are generated before landmarks, so they must be byte-identical.
+  assert.deepEqual(gifted.buildings, plain.buildings, 'gift landmarks must not perturb building layout')
+  assert.equal(gifted.landmarks.length, plain.landmarks.length + 2)
+  const added = gifted.landmarks.slice(plain.landmarks.length)
+  assert.deepEqual(added.map((l) => l.kind), ['lighthouse', 'dome'])
+  assert.ok(added.every((l) => l.gift === true), 'appended landmarks are tagged gift')
+})
+
+test('gift flags pass through as scene.flags (entity boosts)', () => {
+  assert.deepEqual(sceneFor(city({ giftFlags: { aviary: true, zoo: true } }), 1).flags, { aviary: true, zoo: true })
+  assert.deepEqual(sceneFor(city(), 1).flags, {})
+})

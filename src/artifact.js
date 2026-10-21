@@ -14,6 +14,7 @@ import { effectiveBuilt } from './sim/condition.js'
 import { INFECTION } from './tuning.js'
 import { COOLDOWN_MS, LEGENDARY } from './acts.js'
 import { achievementsFor, streakFor } from './progress.js'
+import { dayOf, unlockedGrants, GIFTS } from './gifts.js'
 import { formatEvent, summarize } from './history.js'
 import { DEFAULT_CONFIG } from './config.js'
 
@@ -42,7 +43,11 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   // Districts split by burn source: Claude Code ("tech") vs cornercase agents ("ops/industry").
   const claude = state.claude?.cumulativeTokens ?? 0
   const sourceMix = sim.builtTokens > 0 ? Math.max(0, Math.min(1, claude / sim.builtTokens)) : 0.5
-  const scene = sceneFor(sim, state.citySeed, sourceMix)
+  // Daily gifts fold into the scene: services light up boats/planes, landmarks add structures, flags
+  // boost entities. Any service already on the sim (e.g. a demo) is kept and merged with gifted ones.
+  const grants = unlockedGrants(state.gifts)
+  const services = { ...(sim.services || {}), ...grants.services }
+  const scene = sceneFor({ ...sim, services, giftLandmarks: grants.landmarks, giftFlags: grants.flags }, state.citySeed, sourceMix)
   const infection = sim.infection?.severity ?? 0 // the Outbreak drags population + economy down
   const eco = economyFor(effectiveBuilt(sim), sim.vitality * (1 - INFECTION.economyDrop * infection))
   const readout = {
@@ -63,6 +68,12 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   const renderedAt = state.render?.lastRenderedAt ?? null
   const lastActAt = state.acts?.lastActAt ?? null // drives the live cooldown countdown
   const nowIso = renderedAt || sim.lastMeaningfulBurnAt || new Date().toISOString()
+  // Daily-gift readout: the current day since install, how many of the 59 gifts are unlocked, and the
+  // latest one (with its claim time, so the page can flash a fresh-gift banner like it does for acts).
+  const giftsState = state.gifts ?? {}
+  const day = dayOf(state.install?.installedAt, nowIso)
+  const giftCount = Object.keys(giftsState.unlocked || {}).length
+  const lastGift = giftsState.last ?? null
   return {
     scene,
     theme: config.theme,
@@ -81,12 +92,16 @@ export function cityData(state, config = DEFAULT_CONFIG) {
     districts: config.districts ?? { tech: 'Tech', ops: 'Industry' },
     flag: config.flag ?? '',
     infection,
+    day,
+    giftCount,
+    giftTotal: GIFTS.length,
+    lastGift,
   }
 }
 
 export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   const data = cityData(state, config)
-  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection } = data
+  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift } = data
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -143,6 +158,17 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   .act-btn.mini:hover { cursor: pointer; border-color: #6f9bff; }
   #act-banner.legendary { border-color: #ffd76a; box-shadow: 0 0 26px rgba(255,215,106,.55), 0 8px 28px rgba(0,0,0,.45); }
   #act-banner.legendary .ttl { color: #ffd76a; }
+  #gift-banner {
+    position: absolute; left: 50%; top: 58px; transform: translateX(-50%) translateY(-8px);
+    max-width: 88%; padding: 7px 15px; border-radius: 999px; pointer-events: none;
+    background: rgba(20,14,30,.84); backdrop-filter: blur(6px); border: 1px solid rgba(201,138,255,.42);
+    box-shadow: 0 8px 26px rgba(0,0,0,.42); text-align: center; opacity: 0; transition: opacity .5s, transform .5s;
+    font-size: 13px; line-height: 1.3; color: #e6d6ff; font-weight: 600;
+  }
+  #gift-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #gift-banner .gico { margin-right: 5px; }
+  #hud .daygift { margin: -8px 0 14px; font-size: 12px; opacity: .72; }
+  #hud .daygift .gname { color: #d7b8ff; }
   .panel { margin-top: 16px; }
   .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; opacity: .7; margin: 0 0 7px; font-weight: 700; }
   .panel .muted { opacity: .5; font-weight: 400; text-transform: none; letter-spacing: 0; }
@@ -174,6 +200,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   <canvas id="city" width="960" height="640" aria-label="Your Tokenopolis city"></canvas>
   <canvas id="act-fx" width="960" height="640" aria-hidden="true"></canvas>
   <div id="act-banner" role="status"><div class="ttl"></div><div class="sub"></div></div>
+  <div id="gift-banner" role="status"><span class="gico">🎁</span><span class="gtxt"></span></div>
   <div id="choice" class="choice-overlay" hidden>
     <div class="choice-box">
       <div class="choice-title">Choose the city's fate</div>
@@ -189,6 +216,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 <aside id="hud">
   <h1>${flag ? esc(flag) + ' ' : ''}${esc(readout.cityName)}</h1>
   <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
+  <div class="daygift" id="daygift">🎁 Day ${day} · ${giftCount}/${giftTotal} gifts${lastGift ? ' · <span class="gname">' + esc(lastGift.name) + '</span>' : ''}</div>
   <div id="infected" class="infected"${infection > 0 ? '' : ' hidden'}>☣ Outbreak — ${Math.round(infection * 100)}% · burn to clear</div>
   <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
   <div class="act-hint">click to roll</div>
@@ -338,6 +366,30 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     sting(act.kind);
   }
 
+  // ---- Daily gifts: the HUD "Day N · gifts X/59" line + a banner that flashes on a fresh claim. ----
+  function setDayGift(day, giftCount, giftTotal, name) {
+    var line = document.getElementById('daygift');
+    if (!line) return;
+    line.textContent = '🎁 Day ' + day + ' · ' + giftCount + '/' + giftTotal + ' gifts';
+    if (name) {
+      line.appendChild(document.createTextNode(' · '));
+      var sp = document.createElement('span'); sp.className = 'gname'; sp.textContent = name;
+      line.appendChild(sp);
+    }
+  }
+  function setupGift() {
+    var g = DATA.lastGift;
+    if (!g) return;
+    var fresh = DATA.renderedAt && g.at && Math.abs(Date.parse(DATA.renderedAt) - Date.parse(g.at)) < FRESH_MS;
+    if (!fresh) return;
+    var banner = document.getElementById('gift-banner');
+    if (!banner) return;
+    var t = banner.querySelector && banner.querySelector('.gtxt');
+    if (t) t.textContent = 'Day ' + g.day + ': ' + g.name;
+    if (banner.classList) banner.classList.add('show');
+    if (typeof setTimeout === 'function') setTimeout(function () { if (banner.classList) banner.classList.remove('show'); }, 5200);
+  }
+
   // ---- Ambient sound (muted by default; Web Audio starts on the first toggle click — autoplay-safe). ----
   var audio = { ctx: null, on: false, gain: null };
   function toggleAudio() {
@@ -477,6 +529,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
       if (inf > 0) { infEl.textContent = '☣ Outbreak — ' + Math.round(inf * 100) + '% · burn to clear'; infEl.hidden = false; }
       else infEl.hidden = true;
     }
+    if (typeof s.day !== 'undefined') setDayGift(s.day, s.giftCount, s.giftTotal, s.lastGift && s.lastGift.name);
     updateActBtn();
   }
   function pollLive() {
@@ -490,6 +543,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   frame();
   updateDecay();
   setupActs();
+  setupGift();
   updateActBtn();
   pollLive(); // probe connection immediately so a static/stale copy shows the badge at once
   if (typeof setInterval === 'function') { setInterval(updateActBtn, 1000); setInterval(pollLive, 4000); }

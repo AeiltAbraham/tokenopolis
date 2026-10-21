@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, renameSync, appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultProgress } from './progress.js'
+import { defaultGifts } from './gifts.js'
 
 export const SCHEMA_VERSION = 1
 
@@ -32,7 +33,8 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
     // hourly cooldown stamp, last = the most recent occurrence (what the artifact names + animates).
     acts: { usedIds: [], lastActAt: null, last: null },
     progress: defaultProgress(), // achievements earned + active-day streak (grow-from-zero)
-    history: [], // chronicle: newest-first capped event log (acts, scale-ups, ruin/recovery)
+    gifts: defaultGifts(), // daily gifts: one per day since install (Days 1..59), unlocked set accumulates
+    history: [], // chronicle: newest-first capped event log (acts, scale-ups, ruin/recovery, gifts)
     citySeed,
     render: { lastRenderedAt: null, artifactFile: 'city.html' },
   }
