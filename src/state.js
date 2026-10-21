@@ -27,6 +27,9 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
       ruinProgress: 0,
       recoveryCredit: 0,
       infection: { severity: 0, startedAt: null }, // the Outbreak: 0 = healthy, 1 = overrun
+      era: 'build', // the arc: 'build' → 'ascendant' (Day 60) → 'fallout' (Day 61, the nuclear fall)
+      recovery: 0, // Fallout-era healing meter 0..1 (Phase 4 raises it on idle); 0 in 'build'/'ascendant'
+      singularityAt: null, // ISO stamp when the Singularity (Ascension) began; null until Day 60
     },
     claude: { cumulativeTokens: 0 }, // Claude Code (desktop/CLI) burn, counted forward from install
     // "A Random Act" deck: usedIds drawn-without-replacement (reset when all 50 used), lastActAt =
@@ -34,7 +37,8 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
     acts: { usedIds: [], lastActAt: null, last: null },
     progress: defaultProgress(), // achievements earned + active-day streak (grow-from-zero)
     gifts: defaultGifts(), // daily gifts: one per day since install (Days 1..59), unlocked set accumulates
-    history: [], // chronicle: newest-first capped event log (acts, scale-ups, ruin/recovery, gifts)
+    climax: null, // the Day-60 climax marker { phase: 'ascension'|'fall', at: ISO } — drives the one-time animation
+    history: [], // chronicle: newest-first capped event log (acts, scale-ups, ruin/recovery, gifts, singularity)
     citySeed,
     render: { lastRenderedAt: null, artifactFile: 'city.html' },
   }

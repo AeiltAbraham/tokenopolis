@@ -6,7 +6,7 @@
 // `burn24h` / `burn7d` are accepted for interface stability (the renderer/economy use them), but
 // the decay core derives activity from the builtTokens delta + elapsed time (the recency signal).
 
-import { DECAY, CONDITIONS, INFECTION } from '../tuning.js'
+import { DECAY, CONDITIONS, INFECTION, SINGULARITY } from '../tuning.js'
 import { scaleFor, tokensForIndex } from './scale.js'
 
 const DAY_MS = 86_400_000
@@ -39,10 +39,45 @@ function recoveryCostForLevel(fromIndex) {
   return (tokensForIndex(fromIndex + 1) - tokensForIndex(fromIndex)) / DECAY.recoveryFactor
 }
 
-// step(prevSim, {builtTokens, burn24h, burn7d}, nowIso) → full sim block (see plan §2.2).
-export function step(prevSim, { builtTokens, burn24h, burn7d }, now) {
+// The Day-60 Singularity → Fallout. Once the city has stood `fallDay` days it is razed to a wasteland:
+// the peak "bones" remain but every level collapses, condition bottoms out, and life goes quiet. The
+// `fallout` era HOLDS that razed state — burning no longer builds (Phase 4 flips in the recovery
+// mechanic that lets idleness heal it). Pure: given the same prev it returns the same sim.
+function falloutStep(prev, builtTokens, now, singularityAt) {
+  const peak = prev.peakScaleIndex ?? 0
+  return {
+    builtTokens, // still counted (monotonic), but it no longer drives scale in fallout
+    actTokens: prev.actTokens ?? 0,
+    scaleIndex: 0, // razed to the ground
+    peakScaleIndex: peak, // the ruined-metropolis silhouette stays
+    condition: CONDITIONS[CONDITIONS.length - 1], // Buried — full rubble/overgrowth in the scene
+    vitality: 0, // dead quiet (stale → frames hold still)
+    lastMeaningfulBurnAt: prev.lastMeaningfulBurnAt ?? now,
+    ruinProgress: peak, // fully collapsed across the footprint
+    recoveryCredit: 0,
+    infection: { severity: 0, startedAt: null }, // the blast sterilizes any outbreak
+    era: 'fallout',
+    recovery: clamp01(prev.recovery ?? 0), // Phase 4 raises this on idle ("less AI = recovery")
+    singularityAt: singularityAt ?? prev.singularityAt ?? now,
+  }
+}
+
+// step(prevSim, {builtTokens, burn24h, burn7d, day}, nowIso) → full sim block (see plan §2.2).
+// `day` (days since install, from tick.js) drives the Singularity; omitted → day 0 → stays in 'build'.
+export function step(prevSim, { builtTokens, burn24h, burn7d, day = 0 }, now) {
   const prev = prevSim ?? {}
   const nowMs = Date.parse(now)
+
+  // --- Era transitions. Evaluated first, and sequentially, so a single tick that jumps past both days
+  // (a long absence, or an injected demo day) ascends AND falls in one step. ---
+  let era = prev.era ?? 'build'
+  let singularityAt = prev.singularityAt ?? null
+  if (era === 'build' && day >= SINGULARITY.ascendDay) {
+    era = 'ascendant'
+    singularityAt = now
+  }
+  if (era === 'ascendant' && day >= SINGULARITY.fallDay) era = 'fallout'
+  if (era === 'fallout') return falloutStep(prev, builtTokens, now, singularityAt)
 
   // Scale follows effective size (real burn + the act lever), so a boon grows the city and a disaster
   // shrinks it. Peak is the high-water "bones"; a boon can raise it, a disaster never lowers it.
@@ -91,6 +126,26 @@ export function step(prevSim, { builtTokens, burn24h, burn7d }, now) {
   }
   const infection = { severity: infSeverity, startedAt: infSeverity > 0 ? (prevInf.startedAt ?? now) : null }
 
+  // The Ascension (era 'ascendant', Day 60): the city flares to its gleaming peak — no decay, no
+  // ruins, no outbreak, full vitality — its proudest moment, held until the fall on Day 61.
+  if (era === 'ascendant') {
+    return {
+      builtTokens,
+      actTokens,
+      scaleIndex: peakScaleIndex,
+      peakScaleIndex,
+      condition: CONDITIONS[0], // Thriving
+      vitality: 1,
+      lastMeaningfulBurnAt,
+      ruinProgress: 0,
+      recoveryCredit: 0,
+      infection: { severity: 0, startedAt: null },
+      era,
+      recovery: clamp01(prev.recovery ?? 0),
+      singularityAt,
+    }
+  }
+
   return {
     builtTokens,
     actTokens,
@@ -102,5 +157,8 @@ export function step(prevSim, { builtTokens, burn24h, burn7d }, now) {
     ruinProgress,
     recoveryCredit,
     infection,
+    era,
+    recovery: clamp01(prev.recovery ?? 0),
+    singularityAt,
   }
 }

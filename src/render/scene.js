@@ -142,6 +142,7 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
     infection,
     services: cityState.services ?? {}, // unlocked service gifts (harbour → boats, airport → planes, …)
     flags: cityState.giftFlags ?? {}, // gift entity boosts (aviary → birds, zoo → wildlife, festival → crowds)
+    era: cityState.era ?? 'build', // 'build' | 'ascendant' (gleaming revamp) | 'fallout' (razed wasteland)
     footprint: { cols: side, rows: Math.ceil(count / side) },
     buildings,
     underground,

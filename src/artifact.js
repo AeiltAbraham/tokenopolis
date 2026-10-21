@@ -45,14 +45,19 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   const sourceMix = sim.builtTokens > 0 ? Math.max(0, Math.min(1, claude / sim.builtTokens)) : 0.5
   // Daily gifts fold into the scene: services light up boats/planes, landmarks add structures, flags
   // boost entities. Any service already on the sim (e.g. a demo) is kept and merged with gifted ones.
+  const era = sim.era ?? 'build'
+  // The era snaps the theme: a gleaming 'ascension' revamp at Day 60, then 'wasteland' after the nuclear
+  // fall — overriding the player's configured theme for the duration of the climax and its aftermath.
+  const effectiveTheme = era === 'fallout' ? 'wasteland' : era === 'ascendant' ? 'ascension' : config.theme
+  const recovery = Math.max(0, Math.min(1, sim.recovery ?? 0))
   const grants = unlockedGrants(state.gifts)
   const services = { ...(sim.services || {}), ...grants.services }
-  const scene = sceneFor({ ...sim, services, giftLandmarks: grants.landmarks, giftFlags: grants.flags }, state.citySeed, sourceMix)
+  const scene = sceneFor({ ...sim, era, services, giftLandmarks: grants.landmarks, giftFlags: grants.flags }, state.citySeed, sourceMix)
   const infection = sim.infection?.severity ?? 0 // the Outbreak drags population + economy down
   const eco = economyFor(effectiveBuilt(sim), sim.vitality * (1 - INFECTION.economyDrop * infection))
-  const readout = {
+  let readout = {
     cityName: config.cityName,
-    theme: config.theme,
+    theme: effectiveTheme,
     population: eco.population,
     treasury: eco.treasury,
     economyRating: eco.economyRating,
@@ -62,6 +67,12 @@ export function cityData(state, config = DEFAULT_CONFIG) {
     peakScaleName: scaleName(sim.peakScaleIndex),
     builtTokens: sim.builtTokens,
     lastMeaningfulBurnAt: sim.lastMeaningfulBurnAt,
+    recovery,
+  }
+  // Fallout: the build readouts no longer apply. The wasteland shows survivors returning with `recovery`
+  // (0 until Phase 4's healing mechanic) rather than a population driven by the now-frozen burn.
+  if (era === 'fallout') {
+    readout = { ...readout, population: Math.floor(recovery * eco.population), treasury: 0, economyRating: Math.floor(recovery * 100), scaleName: 'Wasteland', condition: 'Irradiated' }
   }
   // Latest act + when this render happened → animate & name it only when the render was triggered BY it.
   const act = state.acts?.last ?? null
@@ -76,7 +87,10 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   const lastGift = giftsState.last ?? null
   return {
     scene,
-    theme: config.theme,
+    theme: effectiveTheme,
+    era,
+    recovery,
+    climax: state.climax ?? null,
     readout,
     act,
     renderedAt,
@@ -101,7 +115,7 @@ export function cityData(state, config = DEFAULT_CONFIG) {
 
 export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   const data = cityData(state, config)
-  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift } = data
+  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift, era, climax } = data
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -154,6 +168,23 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   #conn[hidden] { display: none; }
   #infected { margin: 0 0 12px; padding: 7px 10px; border-radius: 8px; background: rgba(120,160,70,.14); border: 1px solid rgba(150,190,90,.5); color: #c6e89a; font-size: 12px; font-weight: 600; text-align: center; letter-spacing: .02em; }
   #infected[hidden] { display: none; }
+  #era { margin: 0 0 12px; padding: 8px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; text-align: center; letter-spacing: .02em; }
+  #era[hidden] { display: none; }
+  #era.ascendant { background: rgba(255,214,106,.14); border: 1px solid rgba(255,214,106,.55); color: #ffe39a; box-shadow: 0 0 18px rgba(255,214,106,.25); }
+  #era.fallout { background: rgba(201,138,42,.14); border: 1px solid rgba(201,138,42,.55); color: #e8c48a; }
+  #climax-banner {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(.92);
+    max-width: 86%; padding: 16px 26px; border-radius: 16px; pointer-events: none; z-index: 6;
+    background: rgba(8,10,18,.84); backdrop-filter: blur(8px); text-align: center;
+    opacity: 0; transition: opacity .6s, transform .6s; box-shadow: 0 12px 48px rgba(0,0,0,.6);
+  }
+  #climax-banner.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  #climax-banner .ctitle { font-size: 22px; font-weight: 800; letter-spacing: .5px; }
+  #climax-banner .csub { font-size: 13px; opacity: .82; margin-top: 4px; }
+  #climax-banner.ascension { border: 1px solid rgba(255,221,130,.7); box-shadow: 0 0 60px rgba(255,221,130,.5), 0 12px 48px rgba(0,0,0,.5); }
+  #climax-banner.ascension .ctitle { color: #ffe39a; }
+  #climax-banner.fall { border: 1px solid rgba(255,120,70,.7); box-shadow: 0 0 60px rgba(255,100,60,.5), 0 12px 48px rgba(0,0,0,.6); }
+  #climax-banner.fall .ctitle { color: #ff9a6a; }
   .act-btn.mini { font-size: 12px; padding: 8px 12px; margin: 10px 0 2px; background: linear-gradient(180deg,#232a3a,#191e2a); }
   .act-btn.mini:hover { cursor: pointer; border-color: #6f9bff; }
   #act-banner.legendary { border-color: #ffd76a; box-shadow: 0 0 26px rgba(255,215,106,.55), 0 8px 28px rgba(0,0,0,.45); }
@@ -201,6 +232,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   <canvas id="act-fx" width="960" height="640" aria-hidden="true"></canvas>
   <div id="act-banner" role="status"><div class="ttl"></div><div class="sub"></div></div>
   <div id="gift-banner" role="status"><span class="gico">🎁</span><span class="gtxt"></span></div>
+  <div id="climax-banner" role="status"><div class="ctitle"></div><div class="csub"></div></div>
   <div id="choice" class="choice-overlay" hidden>
     <div class="choice-box">
       <div class="choice-title">Choose the city's fate</div>
@@ -218,6 +250,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
   <div class="daygift" id="daygift">🎁 Day ${day} · ${giftCount}/${giftTotal} gifts${lastGift ? ' · <span class="gname">' + esc(lastGift.name) + '</span>' : ''}</div>
   <div id="infected" class="infected"${infection > 0 ? '' : ' hidden'}>☣ Outbreak — ${Math.round(infection * 100)}% · burn to clear</div>
+  <div id="era" class="${esc(era)}"${era === 'build' ? ' hidden' : ''}>${era === 'ascendant' ? '⚡ Ascended — the Singularity' : era === 'fallout' ? `☢️ Fallout — recovery ${Math.round((readout.recovery ?? 0) * 100)}% · the land needs rest` : ''}</div>
   <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
   <div class="act-hint">click to roll</div>
   <div id="conn" role="status" hidden></div>
@@ -246,7 +279,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
       historyLines.length ? historyLines.map((l) => `<li>${esc(l)}</li>`).join('') : '<li class="muted">nothing yet — roll an act</li>'
     }</ul>
   </section>
-  <div class="theme">theme: ${esc(readout.theme)}</div>
+  <div class="theme" id="themecap">theme: ${esc(readout.theme)}</div>
 </aside>
 <script id="city-data" type="application/json">${dataJson}</script>
 <script id="city-boot">
@@ -390,6 +423,68 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     if (typeof setTimeout === 'function') setTimeout(function () { if (banner.classList) banner.classList.remove('show'); }, 5200);
   }
 
+  // ---- The Day-60 climax: a one-time Ascension flare, then the nuclear flash, drawn on #act-fx. ----
+  function climaxFx(phase) {
+    var fx = document.getElementById('act-fx'); if (!fx || !fx.getContext) return;
+    var g = fx.getContext('2d'), w = fx.width, h = fx.height, stage = document.getElementById('stage'), start = 0, DUR = 6500;
+    (function run(ts) {
+      if (!start) start = ts;
+      var p = (ts - start) / DUR; if (p > 1) p = 1;
+      g.clearRect(0, 0, w, h);
+      if (phase === 'ascension') {
+        var cx = w / 2, cy = h * 0.5, R = (0.3 + 0.7 * Math.min(1, p * 1.4)) * w * 0.7;
+        var a = 0.85 * Math.sin(Math.PI * Math.min(1, p * 1.05));
+        var gr = g.createRadialGradient(cx, cy, 0, cx, cy, R);
+        gr.addColorStop(0, 'rgba(255,246,214,' + a + ')');
+        gr.addColorStop(0.5, 'rgba(255,221,130,' + (a * 0.6) + ')');
+        gr.addColorStop(1, 'rgba(255,221,130,0)');
+        g.fillStyle = gr; g.fillRect(0, 0, w, h);
+        g.globalAlpha = 0.5 * Math.sin(Math.PI * p); g.strokeStyle = '#fff7df'; g.lineWidth = 2;
+        for (var i = 0; i < 16; i++) { var ang = (i / 16) * 6.283 + p * 0.6; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(ang) * R, cy + Math.sin(ang) * R); g.stroke(); }
+        g.globalAlpha = 1; g.lineWidth = 1;
+      } else {
+        if (p < 0.16) { g.globalAlpha = Math.min(1, p / 0.07); g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.globalAlpha = 1; }
+        else {
+          var q = (p - 0.16) / 0.84, bx = w / 2, by = h * 0.52;
+          g.globalAlpha = Math.max(0, 0.9 - q); g.strokeStyle = '#ffd08a'; g.lineWidth = 8;
+          g.beginPath(); g.arc(bx, by, q * w * 0.78, 0, 6.3); g.stroke();
+          g.globalAlpha = 0.5 * (1 - q); g.fillStyle = '#6a5a44'; g.fillRect(0, 0, w, h);
+          g.globalAlpha = 0.6; g.fillStyle = '#d9cdbd';
+          for (var j = 0; j < 60; j++) { var r = PR[j], ay = ((q * (0.5 + r[0]) + r[2]) % 1) * h, ax = w * r[1]; g.fillRect(ax, ay, 2, 2); }
+          g.globalAlpha = 1; g.lineWidth = 1;
+        }
+        if (stage) { var m = (p < 0.3 ? (1 - p / 0.3) : 0) * 14, rr = PR[(ts | 0) % 72]; stage.style.transform = m ? 'translate(' + ((rr[0] - 0.5) * m).toFixed(1) + 'px,' + ((rr[1] - 0.5) * m).toFixed(1) + 'px)' : ''; }
+      }
+      if (p < 1) requestAnimationFrame(run); else { g.clearRect(0, 0, w, h); if (stage) stage.style.transform = ''; }
+    })(0);
+  }
+  function showClimax(phase) {
+    var banner = document.getElementById('climax-banner');
+    if (banner) {
+      var t = banner.querySelector && banner.querySelector('.ctitle'), s = banner.querySelector && banner.querySelector('.csub');
+      if (phase === 'ascension') { if (t) t.textContent = '⚡ The Singularity'; if (s) s.textContent = 'AI Reached Consciousness'; }
+      else { if (t) t.textContent = '☢️ Nuclear Downfall'; if (s) s.textContent = 'The city is razed. Burn less — the land must rest.'; }
+      banner.className = phase;
+      if (banner.classList) banner.classList.add('show');
+      if (typeof setTimeout === 'function') setTimeout(function () { if (banner.classList) banner.classList.remove('show'); }, 6600);
+    }
+    if (typeof requestAnimationFrame === 'function') climaxFx(phase);
+    sting(phase === 'fall' ? 'disaster' : 'boon');
+  }
+  var lastClimaxAt = DATA.climax ? DATA.climax.at : null;
+  function setupClimax() {
+    var c = DATA.climax; if (!c) return;
+    var fresh = DATA.renderedAt && c.at && Math.abs(Date.parse(DATA.renderedAt) - Date.parse(c.at)) < FRESH_MS;
+    if (fresh) showClimax(c.phase);
+  }
+  // The era badge (⚡ Ascended / ☢️ Fallout) + its live recovery readout; hidden in the normal build era.
+  function setEra(era, recovery) {
+    var el = document.getElementById('era'); if (!el) return;
+    if (era === 'ascendant') { el.className = 'ascendant'; el.textContent = '⚡ Ascended — the Singularity'; el.hidden = false; }
+    else if (era === 'fallout') { el.className = 'fallout'; el.textContent = '☢️ Fallout — recovery ' + Math.round((recovery || 0) * 100) + '% · the land needs rest'; el.hidden = false; }
+    else { el.hidden = true; }
+  }
+
   // ---- Ambient sound (muted by default; Web Audio starts on the first toggle click — autoplay-safe). ----
   var audio = { ctx: null, on: false, gain: null };
   function toggleAudio() {
@@ -530,6 +625,9 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
       else infEl.hidden = true;
     }
     if (typeof s.day !== 'undefined') setDayGift(s.day, s.giftCount, s.giftTotal, s.lastGift && s.lastGift.name);
+    if (typeof s.theme !== 'undefined') { DATA.theme = s.theme; setTxt('themecap', 'theme: ' + s.theme); } // the era can snap the theme (ascension / wasteland) — keep the HUD caption in sync
+    if (typeof s.era !== 'undefined') setEra(s.era, s.readout.recovery || 0);
+    if (s.climax && s.climax.at && s.climax.at !== lastClimaxAt) { lastClimaxAt = s.climax.at; showClimax(s.climax.phase); } // the fall landed while watching
     updateActBtn();
   }
   function pollLive() {
@@ -544,6 +642,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   updateDecay();
   setupActs();
   setupGift();
+  setupClimax();
   updateActBtn();
   pollLive(); // probe connection immediately so a static/stale copy shows the badge at once
   if (typeof setInterval === 'function') { setInterval(updateActBtn, 1000); setInterval(pollLive, 4000); }

@@ -58,6 +58,12 @@ export const INFECTION = {
   economyDrop: 0.6, // at full severity, population + economy fall to (1 − this) of normal
 }
 
+// The Day-60 Singularity → Fallout arc. The gift catalog covers Days 1..59; Day 60 is the climax.
+export const SINGULARITY = {
+  ascendDay: 60, // first day the city ascends — "AI Reached Consciousness" (the gleaming revamp)
+  fallDay: 61, // the nuclear downfall lands — the city is razed and the era flips to 'fallout'
+}
+
 export const SCENE = {
   baseBuildings: 6, // buildings drawn in a hamlet
   buildingGrowth: 2.1, // conceptual buildings multiply per scale step (visible density climb)

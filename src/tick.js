@@ -16,31 +16,47 @@ import { notifyAchievements } from './notify.js'
 
 export function advance(prev, stats, now, claudeDelta = 0) {
   const afterStats = applyStatsRead(prev, stats, claudeDelta) // cornercase + Claude → monotonic builtTokens
+  const day = dayOf(prev.install?.installedAt, now) // days since install — drives gifts AND the Singularity
   const newSim = step(
     prev.sim, // PRIOR sim — so the delta is visible
-    { builtTokens: afterStats.sim.builtTokens, burn24h: afterStats.stats.burn24h, burn7d: afterStats.stats.burn7d },
+    { builtTokens: afterStats.sim.builtTokens, burn24h: afterStats.stats.burn24h, burn7d: afterStats.stats.burn7d, day },
     now,
   )
-  // Chronicle: log scale-ups (one per level crossed) and ruin onset/clear. appendEvent caps + is immutable.
   let history = prev.history ?? []
-  const oldScale = prev.sim?.scaleIndex ?? 0
-  for (let i = oldScale + 1; i <= newSim.scaleIndex; i++) history = appendEvent(history, { at: now, type: 'scale', label: scaleName(i) })
-  const oldRuin = prev.sim?.ruinProgress ?? 0
-  if (oldRuin === 0 && newSim.ruinProgress > 0) history = appendEvent(history, { at: now, type: 'ruin', label: 'Ruins' })
-  else if (oldRuin > 0 && newSim.ruinProgress === 0) history = appendEvent(history, { at: now, type: 'recovery', label: scaleName(newSim.scaleIndex) })
-  // Outbreak contained: infection burned back down to zero.
-  const oldInf = prev.sim?.infection?.severity ?? 0
-  if (oldInf > 0 && (newSim.infection?.severity ?? 0) === 0) history = appendEvent(history, { at: now, type: 'milestone', label: 'Outbreak contained' })
-  // Daily gifts: one per day since install (clamped to the 59-gift catalog). Claim any owed since the
-  // last tick — one chronicle line + a banner per gift; `last` carries the claim time for freshness.
-  const day = dayOf(prev.install?.installedAt, now)
+  // The Day-60 Singularity → Fallout: the climax is the headline, so the normal decay/scale lines are
+  // suppressed on the transition tick. A single tick that jumps past both days chronicles both climax lines.
+  const fromEra = prev.sim?.era ?? 'build'
+  const toEra = newSim.era ?? 'build'
+  const climaxHappened = fromEra !== toEra
+  let climax = prev.climax ?? null
+  if (climaxHappened) {
+    if (fromEra === 'build') climax = { phase: 'ascension', at: now }
+    if (toEra === 'fallout') climax = { phase: 'fall', at: now }
+  } else {
+    // Normal build-era chronicle: scale-ups (one per level crossed) + ruin onset/clear + outbreak cleared.
+    const oldScale = prev.sim?.scaleIndex ?? 0
+    for (let i = oldScale + 1; i <= newSim.scaleIndex; i++) history = appendEvent(history, { at: now, type: 'scale', label: scaleName(i) })
+    const oldRuin = prev.sim?.ruinProgress ?? 0
+    if (oldRuin === 0 && newSim.ruinProgress > 0) history = appendEvent(history, { at: now, type: 'ruin', label: 'Ruins' })
+    else if (oldRuin > 0 && newSim.ruinProgress === 0) history = appendEvent(history, { at: now, type: 'recovery', label: scaleName(newSim.scaleIndex) })
+    const oldInf = prev.sim?.infection?.severity ?? 0
+    if (oldInf > 0 && (newSim.infection?.severity ?? 0) === 0) history = appendEvent(history, { at: now, type: 'milestone', label: 'Outbreak contained' })
+  }
+  // Daily gifts: one per day since install (clamped to the 59-gift catalog; Day 60 is the climax).
+  // Claim any owed since the last tick — one chronicle line + a banner per gift; `last` stamps freshness.
   let gifts = prev.gifts ?? defaultGifts()
   const claim = claimGiftsUpTo(gifts, day)
   gifts = claim.gifts
   for (const g of claim.claimed) history = appendEvent(history, { at: now, type: 'gift', label: `Day ${g.day}: ${g.name}` })
   if (claim.claimed.length) gifts = { ...gifts, last: { ...gifts.last, at: now } }
+  // The climax lines go in LAST so they stay newest-first — the headline sits atop the chronicle and a
+  // big gift catch-up (Day 4 → Day 61 in one tick) can never bury or cap them out.
+  if (climaxHappened) {
+    if (fromEra === 'build') history = appendEvent(history, { at: now, type: 'singularity', label: 'AI Reached Consciousness' })
+    if (toEra === 'fallout') history = appendEvent(history, { at: now, type: 'downfall', label: 'Nuclear Downfall' })
+  }
   const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
-  return { ...afterStats, sim: newSim, history, progress, gifts }
+  return { ...afterStats, sim: newSim, history, progress, gifts, climax }
 }
 
 export function tick(deps, now) {
@@ -61,7 +77,8 @@ export function tick(deps, now) {
     JSON.stringify(prev.sim) !== JSON.stringify(next.sim) ||
     JSON.stringify(prev.history ?? []) !== JSON.stringify(next.history ?? []) ||
     JSON.stringify(prev.progress ?? {}) !== JSON.stringify(next.progress ?? {}) ||
-    JSON.stringify(prev.gifts ?? {}) !== JSON.stringify(next.gifts ?? {})
+    JSON.stringify(prev.gifts ?? {}) !== JSON.stringify(next.gifts ?? {}) ||
+    JSON.stringify(prev.climax ?? null) !== JSON.stringify(next.climax ?? null)
   if (!changed) return { changed: false, state: prev }
 
   const rendered = { ...next, render: { ...next.render, lastRenderedAt: now } }

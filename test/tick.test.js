@@ -76,9 +76,11 @@ test('daily gifts: advance claims one gift per day since install, with a chronic
 
 test('daily gifts: the full catalog is claimed by day 59 and never overruns into Day 60', () => {
   let state = initState({ baselineLifetimeTokens: 0, installedAt: iso(0), citySeed: 1 })
-  state = advance(state, { lifetimeTotal: 10e6, burn24h: 10e6, burn7d: 10e6, readAt: iso(500) }, iso(500))
+  // Day 59 (iso(58)) — all 59 gifts, and still short of the Day-60 Singularity, so this stays gift-only.
+  state = advance(state, { lifetimeTotal: 10e6, burn24h: 10e6, burn7d: 10e6, readAt: iso(58) }, iso(58))
   assert.equal(state.gifts.claimedThroughDay, 59, 'clamped to the 59-gift catalog (Day 60 is the arc)')
   assert.equal(Object.keys(state.gifts.unlocked).length, 59)
+  assert.equal(state.sim.era, 'build', 'day 59 has not reached the Singularity')
 })
 
 test('Claude burn counts toward builtTokens even when cornercase is flat (combined sources)', () => {
