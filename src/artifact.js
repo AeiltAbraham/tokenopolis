@@ -38,7 +38,10 @@ const fmt = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 // truth, so the polling page re-renders in place with exactly what a full render would show.
 export function cityData(state, config = DEFAULT_CONFIG) {
   const sim = state.sim
-  const scene = sceneFor(sim, state.citySeed)
+  // Districts split by burn source: Claude Code ("tech") vs cornercase agents ("ops/industry").
+  const claude = state.claude?.cumulativeTokens ?? 0
+  const sourceMix = sim.builtTokens > 0 ? Math.max(0, Math.min(1, claude / sim.builtTokens)) : 0.5
+  const scene = sceneFor(sim, state.citySeed, sourceMix)
   const eco = economyFor(effectiveBuilt(sim), sim.vitality) // size includes the "A Random Act" lever
   const readout = {
     cityName: config.cityName,
@@ -72,12 +75,15 @@ export function cityData(state, config = DEFAULT_CONFIG) {
     streak: streakFor(state, nowIso),
     historyLines: (state.history ?? []).slice(0, 8).map(formatEvent),
     tally: summarize(state.history ?? []),
+    sourceMix,
+    districts: config.districts ?? { tech: 'Tech', ops: 'Industry' },
+    flag: config.flag ?? '',
   }
 }
 
 export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   const data = cityData(state, config)
-  const { readout, achievements, streak, historyLines, tally } = data
+  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag } = data
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -139,6 +145,20 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   .chron { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow: auto; font-size: 12px; }
   .chron li { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
   .chron li.muted { opacity: .5; border: 0; }
+  .choice-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(6,8,14,.72); backdrop-filter: blur(3px); border-radius: 12px; z-index: 5; }
+  .choice-overlay[hidden] { display: none; }
+  .choice-box { width: 88%; max-width: 440px; text-align: center; }
+  .choice-title { font-weight: 700; margin-bottom: 12px; font-size: 15px; }
+  .choice-opts { display: flex; gap: 10px; }
+  .choice-opt { flex: 1; padding: 13px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.16); background: linear-gradient(180deg,#232c42,#1a2132); color: #e8ecf2; cursor: pointer; text-align: left; transition: border-color .2s; }
+  .choice-opt:hover { border-color: #6f9bff; }
+  .choice-opt .cn { font-weight: 700; display: block; margin-bottom: 3px; }
+  .choice-opt .cb { font-size: 11.5px; opacity: .72; }
+  .choice-opt.boon .cn { color: #8fe3a8; }
+  .choice-opt.disaster .cn { color: #ff9a7a; }
+  .choice-cancel { margin-top: 12px; background: none; border: 0; color: #aab4c4; font-size: 12px; cursor: pointer; opacity: .7; }
+  .mute-btn { position: absolute; top: 12px; right: 12px; z-index: 4; width: 34px; height: 34px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: rgba(12,15,22,.7); color: #e8ecf2; cursor: pointer; font-size: 15px; line-height: 1; }
+  .mute-btn:hover { border-color: #6f9bff; }
   @media (max-width: 640px) { #city { flex-basis: 100%; } }
 </style>
 </head>
@@ -147,12 +167,24 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   <canvas id="city" width="960" height="640" aria-label="Your Tokenopolis city"></canvas>
   <canvas id="act-fx" width="960" height="640" aria-hidden="true"></canvas>
   <div id="act-banner" role="status"><div class="ttl"></div><div class="sub"></div></div>
+  <div id="choice" class="choice-overlay" hidden>
+    <div class="choice-box">
+      <div class="choice-title">Choose the city's fate</div>
+      <div class="choice-opts">
+        <button class="choice-opt" type="button"></button>
+        <button class="choice-opt" type="button"></button>
+      </div>
+      <button id="choice-cancel" class="choice-cancel" type="button">cancel</button>
+    </div>
+  </div>
+  <button id="mute-btn" class="mute-btn" type="button" title="Toggle ambient sound" aria-label="Toggle sound">🔈</button>
 </div>
 <aside id="hud">
-  <h1>${esc(readout.cityName)}</h1>
+  <h1>${flag ? esc(flag) + ' ' : ''}${esc(readout.cityName)}</h1>
   <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
   <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
   <div class="act-hint">click to roll</div>
+  <button id="choose-btn" class="act-btn mini" type="button" title="Pick between two acts instead of a random roll">⚖️ Choose an act</button>
   <dl>
     <dt>Population</dt><dd id="pop">${fmt(readout.population)}</dd>
     <dt>Treasury</dt><dd id="treasury">§${fmt(readout.treasury)}</dd>
@@ -160,6 +192,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     <dt>Vitality</dt><dd id="vitality">${Math.round(readout.vitality * 100)}%</dd>
     <dt>Peak</dt><dd id="peak">${esc(readout.peakScaleName)}</dd>
     <dt>Streak</dt><dd>${streak.current}d · best ${streak.best}</dd>
+    <dt>Districts</dt><dd title="${esc(districts.tech)} (Claude Code) vs ${esc(districts.ops)} (cornercase agents)">${Math.round(sourceMix * 100)}% ${esc(districts.tech)}</dd>
     <dt>Latest act</dt><dd id="lastact">—</dd>
     <dt>Decay clock</dt><dd id="decay">—</dd>
   </dl>
@@ -292,7 +325,41 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
       if (banner.classList) banner.classList.add('show');
     }
     if (typeof requestAnimationFrame === 'function') startFx(act);
+    sting(act.kind);
   }
+
+  // ---- Ambient sound (muted by default; Web Audio starts on the first toggle click — autoplay-safe). ----
+  var audio = { ctx: null, on: false, gain: null };
+  function toggleAudio() {
+    try {
+      if (!audio.ctx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audio.ctx = new AC();
+        audio.gain = audio.ctx.createGain(); audio.gain.gain.value = 0; audio.gain.connect(audio.ctx.destination);
+        var lp = audio.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.connect(audio.gain);
+        [110, 110.5, 164.8].forEach(function (f) { var o = audio.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(lp); o.start(); });
+      }
+      if (audio.ctx.resume) audio.ctx.resume();
+      audio.on = !audio.on;
+      audio.gain.gain.setTargetAtTime(audio.on ? 0.05 : 0, audio.ctx.currentTime, 0.3);
+      var mb = document.getElementById('mute-btn'); if (mb) mb.textContent = audio.on ? '🔊' : '🔈';
+      try { localStorage.setItem('tok-audio', audio.on ? '1' : '0'); } catch (e) {}
+    } catch (e) {}
+  }
+  function sting(kind) {
+    if (!audio.on || !audio.ctx) return;
+    try {
+      var o = audio.ctx.createOscillator(), g = audio.ctx.createGain(), t = audio.ctx.currentTime;
+      o.type = kind === 'disaster' ? 'sawtooth' : 'triangle';
+      o.frequency.value = kind === 'disaster' ? 120 : 523;
+      g.gain.value = 0.0001; g.connect(audio.ctx.destination); o.connect(g);
+      g.gain.setTargetAtTime(0.12, t, 0.01); g.gain.setTargetAtTime(0.0001, t + 0.09, 0.12);
+      o.start(t); o.stop(t + 0.6);
+    } catch (e) {}
+  }
+  var muteBtn = document.getElementById('mute-btn');
+  if (muteBtn && muteBtn.addEventListener) muteBtn.addEventListener('click', toggleAudio);
 
   // ---- Always-visible "A Random Act" button with a live cooldown countdown. ----
   var actBtn = document.getElementById('act-btn'), actHint = document.querySelector && document.querySelector('.act-hint');
@@ -329,6 +396,43 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     });
   }
 
+  // ---- Choose-your-act: offer two options, apply the pick. ----
+  var chooseBtn = document.getElementById('choose-btn'), choiceEl = document.getElementById('choice');
+  function hideChoice() { if (choiceEl) choiceEl.hidden = true; }
+  function pickChoice(id) {
+    hideChoice();
+    if (typeof fetch !== 'function') return;
+    fetch('/act?choice=' + encodeURIComponent(id), { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) { if (res && res.ok && typeof location !== 'undefined' && location.reload) location.reload(); })
+      .catch(function () {});
+  }
+  function fillOpt(btn, opt) {
+    if (!btn || !opt) { if (btn) btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    btn.className = 'choice-opt ' + opt.kind;
+    btn.textContent = '';
+    var cn = document.createElement('span'); cn.className = 'cn'; cn.textContent = (opt.kind === 'boon' ? '✨ ' : '⚠ ') + opt.name;
+    var cb = document.createElement('span'); cb.className = 'cb'; cb.textContent = opt.blurb || '';
+    btn.appendChild(cn); btn.appendChild(cb);
+    btn.onclick = function () { pickChoice(opt.id); };
+  }
+  if (chooseBtn && chooseBtn.addEventListener) {
+    chooseBtn.addEventListener('click', function () {
+      if (typeof fetch !== 'function') { actFallback(); return; }
+      fetch('/choice').then(function (r) { return r.ok ? r.json() : null; }).then(function (res) {
+        if (!res) return;
+        if (!res.ok) { if (res.reason === 'cooldown' && actHint) actHint.textContent = 'on cooldown — ' + (res.minutesLeft || 0) + 'm left'; return; }
+        if (!choiceEl || !choiceEl.querySelectorAll) return;
+        var opts = choiceEl.querySelectorAll('.choice-opt');
+        fillOpt(opts[0], res.options[0]); fillOpt(opts[1], res.options[1]);
+        choiceEl.hidden = false;
+      }).catch(function () {});
+    });
+  }
+  var choiceCancel = document.getElementById('choice-cancel');
+  if (choiceCancel && choiceCancel.addEventListener) choiceCancel.addEventListener('click', hideChoice);
+
   // ---- Save postcard (PNG export) ----
   var postcardBtn = document.getElementById('postcard-btn');
   if (postcardBtn && postcardBtn.addEventListener && typeof exportPostcard === 'function') {
@@ -336,7 +440,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   }
   // ---- Live growth: poll /state and update the city + numbers in place (no reload) when served locally. ----
   function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
-  function grp(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function grp(n) { return String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); } // \\ — inside a template literal
   function applyLive(s) {
     if (!s || !s.readout) return;
     DATA.scene = s.scene; DATA.readout = s.readout; // the rAF loop redraws DATA.scene automatically

@@ -8,8 +8,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const DEFAULT_CONFIG = { cityName: 'Tokenopolis', theme: 'temperate' }
+export const DEFAULT_CONFIG = { cityName: 'Tokenopolis', theme: 'temperate', flag: '', districts: { tech: 'Tech', ops: 'Industry' } }
 const ALLOWED_THEMES = new Set(['temperate', 'coastal', 'desert', 'nordic', 'neon', 'cyberpunk', 'solarpunk', 'blueprint', 'crt'])
+const dname = (v, fallback) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 24) : fallback)
 
 export function readConfig(configDir = process.env.CORNERCASE_PLUGIN_CONFIG) {
   if (!configDir) return { ...DEFAULT_CONFIG }
@@ -22,5 +23,7 @@ export function readConfig(configDir = process.env.CORNERCASE_PLUGIN_CONFIG) {
   const cityName =
     typeof raw?.cityName === 'string' && raw.cityName.trim() ? raw.cityName.trim().slice(0, 60) : DEFAULT_CONFIG.cityName
   const theme = ALLOWED_THEMES.has(raw?.theme) ? raw.theme : DEFAULT_CONFIG.theme
-  return { cityName, theme }
+  const flag = typeof raw?.flag === 'string' ? raw.flag.trim().slice(0, 4) : '' // a short emoji/badge by the name
+  const districts = { tech: dname(raw?.districts?.tech, 'Tech'), ops: dname(raw?.districts?.ops, 'Industry') }
+  return { cityName, theme, flag, districts }
 }

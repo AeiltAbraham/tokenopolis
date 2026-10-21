@@ -8,13 +8,13 @@ import { loadState, saveState, logLine } from '../src/state.js'
 import { writeArtifact } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
 import { openCity } from '../scripts/open-city.mjs'
-import { performAct, canAct, msUntilNextAct } from '../src/acts.js'
+import { performAct, applyAct, canAct, msUntilNextAct, ACTS } from '../src/acts.js'
 import { appendEvent } from '../src/history.js'
 import { updateProgress, newlyEarned } from '../src/progress.js'
 import { notifyAchievements } from '../src/notify.js'
 
 // Injectable for tests: nowIso (clock), rng (deck roll), open (opener), config.
-export function runRandomAct({ dir, nowIso = () => new Date().toISOString(), rng = Math.random, open = openCity, config }) {
+export function runRandomAct({ dir, nowIso = () => new Date().toISOString(), rng = Math.random, open = openCity, config, choiceId }) {
   const now = nowIso()
   const cfg = config ?? readConfig()
   const state = loadState(dir)
@@ -32,7 +32,18 @@ export function runRandomAct({ dir, nowIso = () => new Date().toISOString(), rng
     open(dir) // still open the city so the user sees the button counting down
     return { ok: false, reason: 'cooldown', minutesLeft: mins }
   }
-  const acted = performAct({ ...state, acts }, now, rng)
+  // choose-your-act: apply the picked common act; otherwise roll the deck (may hit a legendary).
+  let acted
+  if (choiceId) {
+    const chosen = ACTS.find((a) => a.id === choiceId)
+    if (!chosen) {
+      console.error('Tokenopolis: unknown act choice.')
+      return { ok: false, reason: 'bad-choice' }
+    }
+    acted = applyAct({ ...state, acts }, chosen, [...(acts.usedIds ?? []), chosen.id], now)
+  } else {
+    acted = performAct({ ...state, acts }, now, rng)
+  }
   const o = acted.acts.last
   // Chronicle the act + refresh achievements/streak immediately (cycled-deck must be caught on the
   // 50th act, before usedIds resets), then notify any freshly-earned milestones.

@@ -13,6 +13,7 @@ import { tick } from '../src/tick.js'
 import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/claude-stats.js'
 import { startCityServer } from '../src/server.js'
 import { runRandomAct } from '../bin/random-act.js'
+import { canAct, msUntilNextAct, drawChoice } from '../src/acts.js'
 
 const randomSeed = () => (Math.floor(Math.random() * 0xffffffff) >>> 0)
 
@@ -79,10 +80,19 @@ export function startService({
   try {
     cityServer = startCityServer({
       dir,
-      runAct: () => runRandomAct({ dir, open: () => {}, nowIso, config }),
+      runAct: (choiceId) => runRandomAct({ dir, open: () => {}, nowIso, config, choiceId }),
       readState: () => {
         const s = loadState(dir, nowIso)
         return s ? cityData(s, config) : null
+      },
+      readChoice: () => {
+        const s = loadState(dir, nowIso)
+        if (!s) return null
+        const acts = s.acts ?? { usedIds: [], lastActAt: null }
+        const nowMs = Date.parse(nowIso())
+        if (!canAct(acts, nowMs)) return { ok: false, reason: 'cooldown', minutesLeft: Math.ceil(msUntilNextAct(acts, nowMs) / 60000) }
+        const { options } = drawChoice(acts.usedIds ?? [], Math.random)
+        return { ok: true, options: options.map((o) => ({ id: o.id, name: o.name, kind: o.kind, blurb: o.blurb })) }
       },
       onReady: (url) => {
         try {

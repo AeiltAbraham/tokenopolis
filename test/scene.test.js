@@ -20,6 +20,14 @@ test('healthy conditions carry no damage; Declining+ introduces structural damag
   assert.ok(declining.buildings.some((b) => b.damage > 0), 'Declining must introduce damage')
 })
 
+test('districts split by burn source: mix 1 → all tech, 0 → all ops, 0.5 → mixed', () => {
+  const s = city({ peakScaleIndex: 5, scaleIndex: 5 })
+  assert.ok(sceneFor(s, 7, 1).buildings.every((b) => b.district === 'tech'), 'all-Claude → all tech')
+  assert.ok(sceneFor(s, 7, 0).buildings.every((b) => b.district === 'ops'), 'all-cornercase → all ops')
+  const mixed = sceneFor(s, 7, 0.5).buildings
+  assert.ok(mixed.some((b) => b.district === 'tech') && mixed.some((b) => b.district === 'ops'), 'a 50/50 mix has both')
+})
+
 test('condition is structural, not color-only (grayscale-safe): no color fields in the scene', () => {
   const scene = sceneFor(city({ condition: 'Blighted' }), 7)
   const json = JSON.stringify(scene)

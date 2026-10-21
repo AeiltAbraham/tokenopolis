@@ -66,7 +66,7 @@ test('config: defaults when absent/invalid; valid parsed; bad theme → temperat
   assert.deepEqual(readConfig('/no/such/dir/xyz'), DEFAULT_CONFIG)
   const dir = tmp()
   writeFileSync(join(dir, 'config.json'), JSON.stringify({ cityName: 'Metropol', theme: 'desert' }))
-  assert.deepEqual(readConfig(dir), { cityName: 'Metropol', theme: 'desert' })
+  assert.deepEqual(readConfig(dir), { cityName: 'Metropol', theme: 'desert', flag: '', districts: { tech: 'Tech', ops: 'Industry' } })
   const dir2 = tmp()
   writeFileSync(join(dir2, 'config.json'), JSON.stringify({ cityName: 'X', theme: 'rainbow' }))
   assert.equal(readConfig(dir2).theme, 'temperate')

@@ -61,6 +61,10 @@ Then open your city from the **Open Tokenopolis** action (workspace or pane menu
   an active-day **streak**, a **chronicle** of the city's events, **legendary** 1-in-25 acts with a
   gold banner, four new **themes** (cyberpunk, solarpunk, blueprint, crt), a **Save postcard** PNG
   export, and cornercase **milestone notifications**.
+- **v0.5:** **choose-your-act** (pick between two acts instead of a random roll), **districts** split
+  by burn source — Claude Code ("tech") vs cornercase agents ("industry"), tinted on the rooftops —
+  and **personalization**: a `flag` emoji by the city name, custom district names, and an optional
+  ambient-**audio** toggle (muted by default). Config keys: `cityName`, `theme`, `flag`, `districts`.
 
 See `spec.md` / `clarify.md` / `plan.md` for the full design. Build status: `progress.md`.
 

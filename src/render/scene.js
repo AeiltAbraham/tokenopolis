@@ -37,7 +37,16 @@ function mulberry32(seed) {
 
 const ZONE_BAG = ['R', 'R', 'R', 'C', 'C', 'I', 'park'] // rough RCI balance with the odd park
 
-export function sceneFor(cityState, citySeed) {
+// Spatial hash (independent of the layout PRNG, so adding districts doesn't shift existing geometry).
+const dhash = (a, b) => {
+  let h = ((a * 73856093) ^ (b * 19349663)) >>> 0
+  h ^= h >>> 13
+  return ((h >>> 0) % 1000) / 1000
+}
+
+// sourceMix = fraction of burn from Claude Code (vs cornercase agents) → bigger "tech" district.
+export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
+  const techShare = clamp01(sourceMix)
   const sizeIndex = Math.max(cityState.peakScaleIndex ?? cityState.scaleIndex ?? 0, 0) // bones = peak
   const effective = Math.max(0, cityState.scaleIndex ?? sizeIndex)
   const condIndex = condIndexOf(cityState.condition ?? 'Thriving')
@@ -72,10 +81,13 @@ export function sceneFor(cityState, citySeed) {
     const dmgRnd = rnd()
     const damage = clamp01(stress * (0.6 + 0.8 * dmgRnd))
     const collapsed = dmgRnd < collapseRatio // buildings in the fallen gap become rubble (decay OR disaster)
+    // District (burn source): 3×3 blocks share a district → visible clusters; size scales with the mix.
+    const district = dhash(Math.floor(gx / 3) * 131 + Math.floor(gy / 3), (citySeed >>> 0) ^ 0x51ed51ed) < techShare ? 'tech' : 'ops'
     buildings.push({
       gx,
       gy,
       zone,
+      district,
       height: collapsed ? Math.max(0, Math.round(baseHeight * 0.3)) : baseHeight,
       density: aggregated ? Math.round(perPrimitive) : 1,
       damage,

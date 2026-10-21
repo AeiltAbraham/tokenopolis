@@ -30,6 +30,14 @@ const rgba = (hex, a) => {
   const n = parseInt(hex.slice(1), 16)
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`
 }
+// Blend two hex colors (t=0 → a, t=1 → b) — used to tint roofs by district.
+function mix(a, b, t) {
+  const na = parseInt(a.slice(1), 16), nb = parseInt(b.slice(1), 16)
+  const ch = (sh) => Math.round(((na >> sh) & 255) * (1 - t) + ((nb >> sh) & 255) * t)
+  return '#' + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0')
+}
+// District roof hue: Claude Code "tech" (cyan) vs cornercase-agent "ops/industry" (amber).
+const DISTRICT_HUE = { tech: '#39d0ff', ops: '#ffb347' }
 const isNight = (hex) => {
   const n = parseInt(hex.slice(1), 16)
   return (n >> 16) + ((n >> 8) & 255) + (n & 255) < 320
@@ -219,7 +227,9 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale) {
 
   const base = p.zone[b.zone] ?? p.zone.R
   // per-zone roof: warm residential, cool-glass commercial, flat-dark industrial
-  const roofColor = b.zone === 'C' ? shade(p.zone.C, -24) : b.zone === 'I' ? shade(p.zone.I, -36) : p.roof
+  let roofColor = b.zone === 'C' ? shade(p.zone.C, -24) : b.zone === 'I' ? shade(p.zone.I, -36) : p.roof
+  // District flavour: a gentle roof tint toward the burn source's hue (cosmetic, grayscale-safe).
+  if (b.district && DISTRICT_HUE[b.district]) roofColor = mix(roofColor, DISTRICT_HUE[b.district], 0.22)
   // left (sunlit) face
   ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, 14), shade(base, -24))
   ctx.beginPath()

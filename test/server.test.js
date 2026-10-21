@@ -66,6 +66,31 @@ test('GET /state returns the injected live data; 404 when readState yields null'
   }
 })
 
+test('GET /choice returns options; POST /act?choice forwards the id to runAct', async () => {
+  const dir = tmp()
+  writeFileSync(join(dir, 'city.html'), 'x')
+  let gotChoice = 'untouched'
+  const live = await new Promise((resolve) => {
+    const s = startCityServer({
+      dir,
+      runAct: (id) => { gotChoice = id; return { ok: true, act: { name: 'X' } } },
+      readChoice: () => ({ ok: true, options: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] }),
+      basePort: 0, onReady: (url) => resolve({ url, s }),
+    })
+  })
+  try {
+    const c = await fetch(live.url + '/choice')
+    assert.equal(c.status, 200)
+    assert.equal((await c.json()).options.length, 2)
+    await fetch(live.url + '/act?choice=b', { method: 'POST' })
+    assert.equal(gotChoice, 'b', 'chosen id forwarded to runAct')
+    await fetch(live.url + '/act', { method: 'POST' })
+    assert.equal(gotChoice, undefined, 'no choice → undefined (random roll)')
+  } finally {
+    live.s.close()
+  }
+})
+
 test('GET / is 404 before any city is rendered', async () => {
   const { url, server } = await boot(tmp(), () => ({ ok: true }))
   try {
