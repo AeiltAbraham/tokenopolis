@@ -130,7 +130,13 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; background: #0e1017; color: #e8ecf2; display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; }
   #stage { flex: 1 1 560px; max-width: 100%; position: relative; }
-  #city { display: block; width: 100%; background: #0b0d13; border-radius: 12px; image-rendering: pixelated; }
+  #city { display: block; width: 100%; background: #0b0d13; border-radius: 12px; image-rendering: pixelated; touch-action: none; }
+  #city.zoomed { cursor: grab; }
+  #city.panning { cursor: grabbing; }
+  .zoom-ctl { position: absolute; right: 12px; bottom: 12px; z-index: 4; display: flex; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: rgba(12,15,22,.7); overflow: hidden; }
+  .zoom-ctl button { height: 30px; min-width: 30px; padding: 0 8px; border: 0; background: none; color: #e8ecf2; cursor: pointer; font: 600 13px/1 ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  .zoom-ctl button:hover { background: rgba(111,155,255,.18); }
+  .zoom-ctl #zoom-fit { min-width: 52px; border-left: 1px solid rgba(255,255,255,.1); border-right: 1px solid rgba(255,255,255,.1); font-weight: 500; opacity: .85; }
   #act-fx { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 12px; pointer-events: none; }
   #act-banner {
     position: absolute; left: 50%; top: 14px; transform: translateX(-50%) translateY(-8px);
@@ -249,6 +255,11 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     </div>
   </div>
   <button id="mute-btn" class="mute-btn" type="button" title="Toggle ambient sound" aria-label="Toggle sound">🔈</button>
+  <div id="zoom-ctl" class="zoom-ctl" role="group" aria-label="Zoom">
+    <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+    <button id="zoom-fit" type="button" title="Fit the whole city (or double-click it)" aria-label="Fit the whole city">100%</button>
+    <button id="zoom-in" type="button" title="Zoom in (or scroll / pinch on the city)" aria-label="Zoom in">+</button>
+  </div>
 </div>
 <aside id="hud">
   <h1>${flag ? esc(flag) + ' ' : ''}${esc(readout.cityName)}</h1>
@@ -296,9 +307,15 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   var canvas = document.getElementById('city');
   var ctx = canvas.getContext('2d');
   var tick = 0;
+  // The zoomed view: screen = world × z + (x, y), in canvas pixels. The city is drawn through it (so it stays sharp
+  // at any zoom); the day/night, weather and outbreak washes stay on the screen.
+  var view = { z: 1, x: 0, y: 0 };
+  var ZOOM_MIN = 1, ZOOM_MAX = 6;
   function frame() {
     var k = tick++;
+    if (ctx.setTransform) ctx.setTransform(view.z, 0, 0, view.z, view.x, view.y);
     drawCity(ctx, DATA.scene, DATA.theme, k);
+    if (ctx.setTransform) ctx.setTransform(1, 0, 0, 1, 0, 0);
     // Living city: day/night tint + seasonal weather, keyed off the viewer's clock (screen-space overlays).
     if (typeof drawDayNight === 'function') {
       var now = Date.now();
@@ -633,6 +650,63 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   if (postcardBtn && postcardBtn.addEventListener && typeof exportPostcard === 'function') {
     postcardBtn.addEventListener('click', function () { exportPostcard(document.getElementById('city'), DATA.readout); });
   }
+  // ---- Zoom: scroll or pinch around the pointer, drag to pan while zoomed in, double-click or "fit" for the whole
+  // city. The view is kept inside the city's canvas, so there is never an edge of nothing. ----
+  var zoomFit = document.getElementById('zoom-fit');
+  function setView(z, x, y) {
+    view.z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    view.x = Math.min(0, Math.max(canvas.width - canvas.width * view.z, x));
+    view.y = Math.min(0, Math.max(canvas.height - canvas.height * view.z, y));
+    if (zoomFit) zoomFit.textContent = Math.round(view.z * 100) + '%';
+    if (canvas.classList) canvas.classList.toggle('zoomed', view.z > 1);
+    frame();
+  }
+  // Zoom by a factor f, keeping the canvas point (cx, cy) where it is.
+  function zoomAt(f, cx, cy) {
+    var z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, view.z * f)), r = z / view.z;
+    setView(z, cx - (cx - view.x) * r, cy - (cy - view.y) * r);
+  }
+  function canvasPoint(e) {
+    var r = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: canvas.width, height: canvas.height };
+    return [(e.clientX - r.left) * canvas.width / (r.width || canvas.width), (e.clientY - r.top) * canvas.height / (r.height || canvas.height)];
+  }
+  if (canvas.addEventListener) {
+    // A wheel, and a trackpad pinch in Chrome/Firefox (a wheel with ctrlKey): finer steps for the pinch.
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var p = canvasPoint(e);
+      zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), p[0], p[1]);
+    }, { passive: false });
+    // Safari's trackpad pinch.
+    var pinchFrom = 1;
+    canvas.addEventListener('gesturestart', function (e) { e.preventDefault(); pinchFrom = view.z; });
+    canvas.addEventListener('gesturechange', function (e) {
+      e.preventDefault();
+      var p = canvasPoint(e);
+      zoomAt(pinchFrom * e.scale / view.z, p[0], p[1]);
+    });
+    var pan = null;
+    canvas.addEventListener('pointerdown', function (e) {
+      if (view.z <= 1 || e.button !== 0) return;
+      pan = { id: e.pointerId, from: canvasPoint(e), x: view.x, y: view.y };
+      if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+      if (canvas.classList) canvas.classList.add('panning');
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!pan || e.pointerId !== pan.id) return;
+      var p = canvasPoint(e);
+      setView(view.z, pan.x + p[0] - pan.from[0], pan.y + p[1] - pan.from[1]);
+    });
+    var endPan = function () { pan = null; if (canvas.classList) canvas.classList.remove('panning'); };
+    canvas.addEventListener('pointerup', endPan);
+    canvas.addEventListener('pointercancel', endPan);
+    canvas.addEventListener('dblclick', function () { setView(1, 0, 0); });
+  }
+  var zoomIn = document.getElementById('zoom-in'), zoomOut = document.getElementById('zoom-out');
+  if (zoomIn && zoomIn.addEventListener) zoomIn.addEventListener('click', function () { zoomAt(1.5, canvas.width / 2, canvas.height / 2); });
+  if (zoomOut && zoomOut.addEventListener) zoomOut.addEventListener('click', function () { zoomAt(1 / 1.5, canvas.width / 2, canvas.height / 2); });
+  if (zoomFit && zoomFit.addEventListener) zoomFit.addEventListener('click', function () { setView(1, 0, 0); });
+
   // ---- Live growth: poll /state and update the city + numbers in place (no reload) when served locally. ----
   function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
   function grp(n) { return String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); } // \\ — inside a template literal

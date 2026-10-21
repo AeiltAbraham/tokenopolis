@@ -102,3 +102,61 @@ test('the inlined bundle actually runs: boot script executes under node:vm and d
   assert.doesNotThrow(() => vm.runInNewContext(boot, context, { timeout: 2000 }))
   assert.ok(fills > 0, 'drawCity should have issued fills when the boot script ran')
 })
+
+test('zoom: the wheel zooms around the pointer, a drag pans inside the city, fit goes back to the whole city', () => {
+  const html = buildArtifactHtml(makeState(), DEFAULT_CONFIG)
+  assert.match(html, /id="zoom-in"/)
+  assert.match(html, /id="zoom-fit"/)
+  const boot = html.match(/<script id="city-boot">([\s\S]*?)<\/script>/)[1]
+  const dataJson = html.match(/<script id="city-data"[^>]*>([\s\S]*?)<\/script>/)[1]
+
+  const transforms = []
+  const ctxStub = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (prop === 'canvas') return { width: 960, height: 640 }
+        if (prop === 'setTransform') return (...a) => transforms.push(a)
+        if (prop === 'createLinearGradient' || prop === 'createRadialGradient') return () => ({ addColorStop() {} })
+        return () => {}
+      },
+      set() { return true },
+    },
+  )
+  const element = () => {
+    const on = {}
+    return { on, addEventListener: (type, fn) => (on[type] = fn), textContent: '', classList: { toggle() {}, add() {}, remove() {} } }
+  }
+  const canvas = { ...element(), width: 960, height: 640, getContext: () => ctxStub, getBoundingClientRect: () => ({ left: 0, top: 0, width: 480, height: 320 }), setPointerCapture() {} }
+  const buttons = { 'zoom-in': element(), 'zoom-out': element(), 'zoom-fit': element() }
+  const document = {
+    getElementById(id) {
+      if (id === 'city-data') return { textContent: dataJson }
+      if (id === 'city') return canvas
+      return buttons[id] ?? null
+    },
+  }
+  vm.runInNewContext(boot, { document, JSON, Date, Math, parseInt, isNaN, console }, { timeout: 2000 })
+  const last = () => transforms.filter((t) => t[0] !== 1 || t[4] !== 0 || t[5] !== 0).at(-1) ?? [1, 0, 0, 1, 0, 0]
+
+  // Scroll up over the canvas' centre (CSS 240,160 → canvas 480,320): zoomed in, the centre stays put.
+  canvas.on.wheel({ deltaY: -300, ctrlKey: false, clientX: 240, clientY: 160, preventDefault() {} })
+  const [z, , , , x, y] = last()
+  assert.ok(z > 1, `zoomed in (${z})`)
+  assert.ok(Math.abs(480 * z + x - 480) < 1e-6 && Math.abs(320 * z + y - 320) < 1e-6, 'the point under the pointer stays put')
+  assert.equal(buttons['zoom-fit'].textContent, `${Math.round(z * 100)}%`)
+
+  // Zooming never goes past 600%, and the view never leaves the city.
+  for (let i = 0; i < 20; i++) canvas.on.wheel({ deltaY: -500, ctrlKey: false, clientX: 0, clientY: 0, preventDefault() {} })
+  assert.equal(last()[0], 6)
+  canvas.on.pointerdown({ button: 0, pointerId: 1, clientX: 100, clientY: 100 })
+  canvas.on.pointermove({ pointerId: 1, clientX: 10_000, clientY: 10_000 })
+  assert.deepEqual(last().slice(4), [0, 0], 'panned as far as the top-left edge, no further')
+  canvas.on.pointermove({ pointerId: 1, clientX: -10_000, clientY: -10_000 })
+  assert.deepEqual(last().slice(4), [960 - 960 * 6, 640 - 640 * 6], 'and the bottom-right edge')
+  canvas.on.pointerup({ pointerId: 1 })
+
+  buttons['zoom-fit'].on.click()
+  assert.equal(buttons['zoom-fit'].textContent, '100%')
+  assert.deepEqual(transforms.at(-2), [1, 0, 0, 1, 0, 0], 'the whole city again')
+})
