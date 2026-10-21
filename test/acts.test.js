@@ -111,7 +111,7 @@ test('cooldown: one act per hour', () => {
 
 test('performAct is pure composition of draw + apply (does not reset the decay clock)', () => {
   const s = cityState()
-  const out = performAct(s, FIXED, () => 0)
+  const out = performAct(s, FIXED, seq([LEGENDARY_CHANCE, 0])) // miss the legendary gate → common deck draw
   assert.equal(out.acts.usedIds.length, 1)
   assert.equal(out.acts.lastActAt, FIXED)
   assert.equal(out.sim.builtTokens, s.sim.builtTokens, 'an act is not burn — builtTokens unchanged')
@@ -191,6 +191,18 @@ test('performAct: a legendary fires when the gate roll is below LEGENDARY_CHANCE
   assert.ok(LEGENDARY.some((l) => l.id === out.acts.last.id), 'occurrence is a legendary')
   assert.notEqual(out.sim.actTokens, 0, 'the lever moved')
   assert.equal(out.acts.lastActAt, FIXED)
+})
+
+test('a performed legendary carries tier "legendary" and leaves the deck untouched (cycled-deck guard)', () => {
+  const s = { ...cityState(), acts: { usedIds: ['tsunami', 'wildfire'], lastActAt: null, last: null } }
+  const out = performAct(s, FIXED, seq([LEGENDARY_CHANCE - 0.001, 0]))
+  assert.equal(out.acts.last.tier, 'legendary', 'occurrence carries tier so survived-legendary can fire')
+  assert.deepEqual(out.acts.usedIds, ['tsunami', 'wildfire'], 'a legendary is not a deck slot — usedIds unchanged')
+})
+
+test('a common act carries tier "common" on the occurrence', () => {
+  const out = performAct(cityState(), FIXED, seq([LEGENDARY_CHANCE, 0]))
+  assert.equal(out.acts.last.tier, 'common')
 })
 
 test('performAct: a common act fires when the gate roll is at/above LEGENDARY_CHANCE', () => {

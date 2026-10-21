@@ -5,27 +5,42 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-export function openCity(dir, platform = process.platform, spawnFn = spawn) {
+// Quick synchronous liveness probe (≤1s). A stale endpoint (keeper crashed, never ran stop()) would
+// otherwise open a DEAD origin whose in-city buttons can't reach /act. If curl is unavailable we can't
+// probe, so we assume live rather than needlessly dropping to the static file.
+function endpointIsLive(url) {
+  try {
+    execFileSync('curl', ['-sS', '-m', '1', '-o', '/dev/null', url], { stdio: 'ignore' })
+    return true
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return true // curl missing — can't probe, assume live
+    return false
+  }
+}
+
+export function openCity(dir, platform = process.platform, spawnFn = spawn, isLive = endpointIsLive) {
   const base = dir ?? '.'
-  // Prefer the live local server (its in-city button can trigger acts); fall back to the static file.
-  let target = null
+  // Prefer the live local server (its in-city button can trigger acts), but only if it actually answers.
+  let url = null
   const endpointFile = join(base, 'endpoint')
   if (existsSync(endpointFile)) {
     try {
-      target = readFileSync(endpointFile, 'utf8').trim() || null
+      url = readFileSync(endpointFile, 'utf8').trim() || null
     } catch {
-      target = null
+      url = null
     }
   }
+  let target = url && isLive(url) ? url : null
   if (!target) {
     const file = join(base, 'city.html')
     if (!existsSync(file)) {
       console.error(`Tokenopolis: no city yet at ${file} — is the city-keeper service running?`)
       return false
     }
+    if (url) console.error('Tokenopolis: the city server is not responding — opening the static city. Its buttons need the live server; re-enable the plugin (cornercase plugin enable tokenopolis).')
     target = file
   }
   const opener = platform === 'darwin' ? 'open' : 'xdg-open'

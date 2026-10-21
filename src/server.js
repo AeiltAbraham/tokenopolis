@@ -72,8 +72,10 @@ export function createCityServer({ dir, runAct, readState, readChoice }) {
       // CSRF guard: a same-origin fetch sends Origin === our own; a cross-site page sends a different
       // one. Refuse the mismatch so a random web page the user visits can't trigger city events.
       const origin = req.headers.origin
-      const host = req.headers.host
-      if (origin && host && origin !== `http://${host}` && origin !== `https://${host}`) {
+      const host = req.headers.host || ''
+      const loopback = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(host)
+      // Reject a non-loopback Host (DNS-rebinding) and any cross-origin POST; a same-origin loopback passes.
+      if (!loopback || (origin && origin !== `http://${host}` && origin !== `https://${host}`)) {
         res.writeHead(403, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ ok: false, reason: 'forbidden' }))
         return
@@ -103,11 +105,22 @@ export function startCityServer({ dir, runAct, readState, readChoice, host = '12
   const server = createCityServer({ dir, runAct, readState, readChoice })
   let port = basePort
   let tries = 0
+  let sameTries = 0
   server.on('error', (e) => {
     if (e && e.code === 'EADDRINUSE' && port !== 0 && tries < maxTries) {
+      // Keep the STABLE port across a restart overlap: retry the SAME port first (an old keeper's
+      // socket frees within a second or two). Only fall forward once it is clearly taken for good —
+      // a shifted port strands an already-open city tab on a dead origin (the recurring "button
+      // refers to the menu" bug), so we try hard to stay on basePort.
+      if (sameTries < 12) {
+        sameTries += 1
+        setTimeout(() => server.listen(port, host), 250)
+        return
+      }
       tries += 1
+      sameTries = 0
       port += 1
-      setTimeout(() => server.listen(port, host), 25) // try the next port
+      setTimeout(() => server.listen(port, host), 25)
     } else if (onFail) {
       onFail(e)
     }

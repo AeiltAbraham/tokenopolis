@@ -159,7 +159,7 @@ export function applyAct(state, act, usedIds, nowIso) {
     { builtTokens: sim.builtTokens ?? 0, burn24h: state.stats?.burn24h ?? 0, burn7d: state.stats?.burn7d ?? 0 },
     nowIso,
   )
-  const occurrence = { id: act.id, name: act.name, kind: act.kind, anim: act.anim, blurb: act.blurb, at: nowIso, delta: rawDelta }
+  const occurrence = { id: act.id, name: act.name, kind: act.kind, anim: act.anim, blurb: act.blurb, at: nowIso, delta: rawDelta, tier: act.tier ?? 'common' }
   return { ...state, sim: newSim, acts: { usedIds, lastActAt: nowIso, last: occurrence } }
 }
 
@@ -169,10 +169,9 @@ export function applyAct(state, act, usedIds, nowIso) {
 export function performAct(state, nowIso, rng) {
   if (rng() < LEGENDARY_CHANCE) {
     const legend = drawLegendary(rng)
-    // The common deck is untouched: legendary ids aren't in ACTS, so drawAct filters this id out on the
-    // next common draw (no card is consumed). It is appended only so the occurrence shows in usedIds.
-    const usedIds = [...(state.acts?.usedIds ?? []), legend.id]
-    return applyAct(state, legend, usedIds, nowIso)
+    // Leave the 50-card deck UNTOUCHED — a legendary is never a deck slot, so 'cycled-deck' counts
+    // only the commons (appending the legendary id would inflate usedIds and award it one act early).
+    return applyAct(state, legend, state.acts?.usedIds ?? [], nowIso)
   }
   const { act, usedIds } = drawAct(state.acts?.usedIds ?? [], rng)
   return applyAct(state, act, usedIds, nowIso)

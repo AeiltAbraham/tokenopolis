@@ -73,8 +73,8 @@ export function cityData(state, config = DEFAULT_CONFIG) {
     actLegendary: !!(act && LEGENDARY_IDS.has(act.id)),
     achievements: achievementsFor(state),
     streak: streakFor(state, nowIso),
-    historyLines: (state.history ?? []).slice(0, 8).map(formatEvent),
-    tally: summarize(state.history ?? []),
+    historyLines: (Array.isArray(state.history) ? state.history : []).slice(0, 8).map(formatEvent),
+    tally: summarize(Array.isArray(state.history) ? state.history : []),
     sourceMix,
     districts: config.districts ?? { tech: 'Tech', ops: 'Industry' },
     flag: config.flag ?? '',
@@ -132,6 +132,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   .act-btn[disabled] { cursor: default; opacity: .62; color: #aab4c4; background: linear-gradient(180deg,#242a38,#1a1f2b); border-color: rgba(255,255,255,.1); animation: none; }
   @keyframes actpulse { 0%{box-shadow:0 0 0 0 rgba(90,150,255,.45)} 70%{box-shadow:0 0 0 10px rgba(90,150,255,0)} 100%{box-shadow:0 0 0 0 rgba(90,150,255,0)} }
   .act-hint { margin: 6px 0 2px; font-size: 11px; opacity: .5; text-align: center; }
+  #conn { margin: 8px 0 2px; padding: 7px 10px; border-radius: 8px; background: rgba(255,120,80,.12); border: 1px solid rgba(255,140,90,.4); color: #ffb49a; font-size: 11px; text-align: center; line-height: 1.3; }
+  #conn[hidden] { display: none; }
   .act-btn.mini { font-size: 12px; padding: 8px 12px; margin: 10px 0 2px; background: linear-gradient(180deg,#232a3a,#191e2a); }
   .act-btn.mini:hover { cursor: pointer; border-color: #6f9bff; }
   #act-banner.legendary { border-color: #ffd76a; box-shadow: 0 0 26px rgba(255,215,106,.55), 0 8px 28px rgba(0,0,0,.45); }
@@ -184,6 +186,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
   <button id="act-btn" class="act-btn" type="button" disabled title="Click to roll a Random Act">A Random Act</button>
   <div class="act-hint">click to roll</div>
+  <div id="conn" role="status" hidden></div>
   <button id="choose-btn" class="act-btn mini" type="button" title="Pick between two acts instead of a random roll">⚖️ Choose an act</button>
   <dl>
     <dt>Population</dt><dd id="pop">${fmt(readout.population)}</dd>
@@ -375,24 +378,32 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     if (rem > 0) { actBtn.disabled = true; actBtn.className = 'act-btn'; actBtn.textContent = '⏳ A Random Act · ' + fmtDur(rem); }
     else { actBtn.disabled = false; actBtn.className = 'act-btn ready'; actBtn.textContent = '⚡ A Random Act · ready'; }
   }
-  function actFallback() { if (actHint) { actHint.textContent = 'open from the ⋯ menu to roll'; actHint.style.opacity = '.9'; } }
+  // Connection state: shown only when the page can't reach its local server (static/shared copy, or a
+  // stale tab after a keeper restart). A reachable server — even one answering with an error — is NOT a
+  // "connection" problem, so we never tell the user to "use the menu" when the menu can't help.
+  var NOT_CONNECTED = '⚠ Not connected to the live city — re-open from the ⋯ menu (Open Tokenopolis)';
+  var STATIC_COPY = '⚠ Static copy — the buttons need the live city (⋯ → Open Tokenopolis)';
+  function setConn(ok, msg) {
+    var c = document.getElementById('conn');
+    if (!c) return;
+    if (ok) { c.hidden = true; } else { c.textContent = msg || NOT_CONNECTED; c.hidden = false; }
+  }
   if (actBtn && actBtn.addEventListener) {
     actBtn.addEventListener('click', function () {
       if (actBtn.disabled) return;
       actBtn.disabled = true; actBtn.className = 'act-btn'; actBtn.textContent = '· rolling ·';
-      if (typeof fetch !== 'function') { actFallback(); updateActBtn(); return; }
-      // Same-origin POST works when the city is served by the plugin's local server; reload shows the
-      // fresh render (animation + new cooldown). When opened as a file/shared artifact, fetch fails →
-      // fall back to the menu hint.
+      if (typeof fetch !== 'function') { setConn(false, STATIC_COPY); updateActBtn(); return; }
       fetch('/act', { method: 'POST' })
         .then(function (r) { return r.json(); })
         .then(function (res) {
+          setConn(true); // the server answered → we ARE connected, whatever the outcome
           if (res && res.ok) { if (typeof location !== 'undefined' && location.reload) location.reload(); return; }
           if (res && res.reason === 'cooldown') { if (actHint) actHint.textContent = 'on cooldown — ' + (res.minutesLeft || 0) + 'm left'; }
-          else { actFallback(); }
+          else if (res && res.reason === 'forbidden') { if (actHint) actHint.textContent = 'blocked (cross-origin request)'; }
+          else { if (actHint) actHint.textContent = 'server error — try again'; if (typeof console !== 'undefined' && console.error) console.error('Tokenopolis /act error', res); }
           updateActBtn();
         })
-        .catch(function () { actFallback(); updateActBtn(); });
+        .catch(function () { setConn(false, NOT_CONNECTED); updateActBtn(); });
     });
   }
 
@@ -419,15 +430,16 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   }
   if (chooseBtn && chooseBtn.addEventListener) {
     chooseBtn.addEventListener('click', function () {
-      if (typeof fetch !== 'function') { actFallback(); return; }
+      if (typeof fetch !== 'function') { setConn(false, STATIC_COPY); return; }
       fetch('/choice').then(function (r) { return r.ok ? r.json() : null; }).then(function (res) {
+        setConn(true);
         if (!res) return;
         if (!res.ok) { if (res.reason === 'cooldown' && actHint) actHint.textContent = 'on cooldown — ' + (res.minutesLeft || 0) + 'm left'; return; }
         if (!choiceEl || !choiceEl.querySelectorAll) return;
         var opts = choiceEl.querySelectorAll('.choice-opt');
         fillOpt(opts[0], res.options[0]); fillOpt(opts[1], res.options[1]);
         choiceEl.hidden = false;
-      }).catch(function () {});
+      }).catch(function () { setConn(false, NOT_CONNECTED); });
     });
   }
   var choiceCancel = document.getElementById('choice-cancel');
@@ -455,14 +467,18 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     updateActBtn();
   }
   function pollLive() {
-    if (typeof fetch !== 'function') return;
-    fetch('/state').then(function (r) { return r.ok ? r.json() : null; }).then(applyLive).catch(function () {});
+    if (typeof fetch !== 'function') { setConn(false, STATIC_COPY); return; }
+    fetch('/state')
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); }) // non-plugin server / 404 → not connected
+      .then(function (s) { setConn(true); applyLive(s); })
+      .catch(function () { setConn(false, NOT_CONNECTED); });
   }
 
   frame();
   updateDecay();
   setupActs();
   updateActBtn();
+  pollLive(); // probe connection immediately so a static/stale copy shows the badge at once
   if (typeof setInterval === 'function') { setInterval(updateActBtn, 1000); setInterval(pollLive, 4000); }
   if (typeof requestAnimationFrame === 'function') {
     var lastT = 0;

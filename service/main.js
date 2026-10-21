@@ -136,6 +136,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const dir = process.env.CORNERCASE_PLUGIN_STATE || process.cwd()
   const svc = startService({ dir, tickMs: Number(process.env.TOKENOPOLIS_TICK_MS) || 60_000 })
   logLine(dir, 'service started', () => new Date().toISOString())
+  // Defense-in-depth: a stray async error (e.g. a failed child spawn) must never take the keeper down
+  // and strand the city server — log it and keep serving.
+  process.on('uncaughtException', (e) => logLine(dir, `uncaught: ${e && e.message}`, () => new Date().toISOString()))
   const shutdown = () => {
     try {
       logLine(dir, 'shutdown', () => new Date().toISOString())
