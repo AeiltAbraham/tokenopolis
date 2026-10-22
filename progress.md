@@ -375,5 +375,30 @@ User: "Remove the sea; show weather and time based on location — but say 'Toke
   tests RED. Both reverted → green.
 
 Suite 195/195, 0 non-flaky failures. Verified live on the keeper after restart: "Tokenopolis near Almunecar ·
-☀ Clear · 23°C" (real local time + real weather), sea gone, 0 external URLs in city.html. Still v1.5.0,
-uncommitted.
+☀ Clear · 23°C" (real local time + real weather), sea gone, 0 external URLs in city.html. (v1.5.0 later
+shipped — commit 735b9a4.)
+
+## 2026-10-22 — Cozy "storybook" renderer restyle (v1.6.0)
+
+User wanted a graphics LEAP. After a WebGL 3D prototype (rejected as "generic lit boxes") and three style
+mockups, they picked "cozy storybook". This restyles the canvas-2D renderer (src/render/draw.js ONLY) toward
+it — all colour/light/density, no new tech, so it stays self-contained + deterministic.
+
+- **Pastel palette:** `pastel(hex,t)` (mix toward warm cream) + a `COZY` spread of soft pastels. Each
+  building takes a seeded COZY colour lightly tinted by its theme/zone hue (`mix(pastel(zoneColor,0.12),
+  accent, 0.62)`), roof = `shade(base,-12)` — ONE cohesive colour per building (replaces the per-zone roof
+  logic → cleaner). Varied + charming but still reads each theme.
+- **Softer light:** gentler face gradients, soft warm contact-AO, warm glowing windows (#ffe7ad + a #ffdf9a
+  6×7 glow), soft warm cast shadows, warm pastel sky + softened pastel ground/countryside.
+- **Decluttered:** removed the rooftop-clutter block; thinned street furniture (keep 0.85→0.26) and citizens
+  ((10+n·8) cap 240 → (5+n·3.5) cap 130) so the town breathes.
+- **Window iso-slant fix (user-reported bug):** windows were drawn in flat horizontal rows; now each row
+  follows its face's iso angle — left `lx=x-hw+u·hw, lwy=y+u·hh-f·FLOOR_H-6`; right `rx=x+u·hw,
+  rwy=y+hh·(1-u)-f·FLOOR_H-6`, u=(c+0.5)/3. Bloom stays a 6×7 fillRect (window guard holds).
+
+All changes are colour/count/position only — geometry stays palette-independent (grayscale guard) and
+tick-independent (stale guard); the window bloom guard holds (6×7, tod-driven). Suite 195/195. Adversarial
+review (workflow w7z12vup5; lenses: guards/determinism, window-slant correctness, state regressions) →
+**0 findings**. Verified across all 11 themes: the naturalistic ones (coastal/temperate/nordic/solarpunk/
+desert/ascension) look genuinely cozy. **OWED follow-up:** the bold themes (cyberpunk/neon/crt) still have
+vivid-green grounds — per-theme ground desaturation needed there. Version → 1.6.0.

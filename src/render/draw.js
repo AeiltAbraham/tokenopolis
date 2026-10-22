@@ -62,6 +62,10 @@ function mix(a, b, t) {
   const ch = (sh) => Math.round(((na >> sh) & 255) * (1 - t) + ((nb >> sh) & 255) * t)
   return '#' + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0')
 }
+// Cozy "storybook" treatment: lighten + desaturate a colour toward warm cream, for soft pastel surfaces.
+const pastel = (hex, t = 0.26) => mix(hex, '#f7ecd9', t)
+// A charming spread of soft pastels; each building picks one (seeded) for a varied storybook palette.
+const COZY = ['#e7a79f', '#e99bb1', '#a6cfc6', '#bfb0dd', '#efcf9a', '#93c3b4', '#e2b2cf', '#9db7df', '#f0b48c']
 // District roof hue: Claude Code "tech" (cyan) vs cornercase-agent "ops/industry" (amber).
 const DISTRICT_HUE = { tech: '#39d0ff', ops: '#ffb347' }
 const isNight = (hex) => {
@@ -106,9 +110,9 @@ export function drawCity(ctx, scene, theme, tick = 0, tod = 0.5) {
 
   // --- sky (vertical gradient) ---
   const sky = ctx.createLinearGradient(0, 0, 0, H)
-  sky.addColorStop(0, shade(p.sky, night ? 16 : -40))
-  sky.addColorStop(0.62, p.sky)
-  sky.addColorStop(1, shade(p.sky, night ? -10 : 22))
+  sky.addColorStop(0, night ? shade(p.sky, 16) : shade(pastel(p.sky, 0.32), -16))
+  sky.addColorStop(0.62, night ? p.sky : pastel(p.sky, 0.28))
+  sky.addColorStop(1, night ? shade(p.sky, -10) : pastel(mix(p.sky, '#f3c9c0', 0.35), 0.12))
   ctx.fillStyle = sky
   ctx.fillRect(0, 0, W, H)
   if (night) {
@@ -136,10 +140,10 @@ export function drawCity(ctx, scene, theme, tick = 0, tod = 0.5) {
   const ghw = span * (TILE_W / 2) + TILE_W
   const ghh = span * (TILE_H / 2) + TILE_H
   drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) // the landscape the city sits in: fields, forest, water, roads out, distant towns
-  ctx.fillStyle = shade(p.ground, -48) // plate rim for depth
+  ctx.fillStyle = shade(pastel(p.ground, 0.44), -22) // soft plate rim for depth
   diamond(ctx, ox, gcy + 6, ghw, ghh)
   ctx.fill()
-  ctx.fillStyle = vgrad(ctx, ox, gcy - ghh, ox, gcy + ghh, shade(p.ground, 16), shade(p.ground, -18))
+  ctx.fillStyle = vgrad(ctx, ox, gcy - ghh, ox, gcy + ghh, shade(pastel(p.ground, 0.44), 10), shade(pastel(p.ground, 0.44), -12))
   diamond(ctx, ox, gcy, ghw, ghh)
   ctx.fill()
 
@@ -219,7 +223,7 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale, tod = 0.5) {
   const vit = scene.vitality ?? 1
   const fest = scene.flags && scene.flags.festival ? 1.4 : 1
   // Streets thin out at night and refill by day (the clock, not the tick → the thinning is steady).
-  const count = Math.min(240, Math.round((10 + n * 8) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.14) * fest * streetActivity(tod)))
+  const count = Math.min(130, Math.round((5 + n * 3.5) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.14) * fest * streetActivity(tod)))
   for (let i = 0; i < count; i++) {
     const onX = srnd(i, 1) < 0.5 // move along the gx axis (true) or the gy axis (false)
     const lane = Math.round(srnd(i, 2) * n) // which road (grid line)
@@ -249,17 +253,17 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale, tod = 0.5) {
 function drawStreetFurniture(ctx, scene, ox, oy) {
   const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
   if (n < 2) return
-  const keep = 0.85 - Math.min(0.72, (scene.overgrowth ?? 0) * 0.85) // nature reclaims it: more overgrowth → fewer survive
+  const keep = 0.26 - Math.min(0.2, (scene.overgrowth ?? 0) * 0.26) // sparse, so the cozy city breathes; overgrowth still thins it further
   for (let gx = 0; gx <= n; gx++) {
     for (let gy = 0; gy <= n; gy++) {
       const r = srnd(gx * 2 + 1, gy * 2 + 3)
       if (r > keep) continue
       const pt = iso(gx, gy, ox, oy)
-      if (r < keep * 0.5) {
-        // a tree: trunk + a two-tone canopy
-        ctx.fillStyle = 'rgba(70,52,34,0.9)'; ctx.fillRect(pt.x - 1, pt.y - 5, 2, 5)
-        ctx.fillStyle = 'rgba(54,104,50,0.92)'; ctx.beginPath(); ctx.arc(pt.x, pt.y - 7, 4, 0, 6.3); ctx.fill()
-        ctx.fillStyle = 'rgba(100,154,84,0.85)'; ctx.beginPath(); ctx.arc(pt.x - 1.2, pt.y - 8, 2, 0, 6.3); ctx.fill()
+      if (r < keep * 0.62) {
+        // a tree: trunk + a soft two-tone canopy (pastel, to match the storybook city)
+        ctx.fillStyle = 'rgba(120,96,70,0.8)'; ctx.fillRect(pt.x - 1, pt.y - 5, 2, 5)
+        ctx.fillStyle = 'rgba(124,170,112,0.92)'; ctx.beginPath(); ctx.arc(pt.x, pt.y - 7, 4, 0, 6.3); ctx.fill()
+        ctx.fillStyle = 'rgba(162,198,142,0.85)'; ctx.beginPath(); ctx.arc(pt.x - 1.2, pt.y - 8, 2, 0, 6.3); ctx.fill()
       } else {
         // a streetlight: a thin pole + a warm lamp head
         ctx.strokeStyle = 'rgba(38,42,52,0.85)'; ctx.lineWidth = 1
@@ -392,7 +396,7 @@ function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
   const onPlate = (px, py) => Math.abs(px - ox) / ghw + Math.abs(py - gcy) / ghh < 1.04
 
   // broad surrounding fields
-  ctx.fillStyle = vgrad(ctx, ox, gcy - eh, ox, gcy + eh, shade(p.zone.park, 8), shade(p.zone.park, -28))
+  ctx.fillStyle = vgrad(ctx, ox, gcy - eh, ox, gcy + eh, shade(pastel(p.zone.park, 0.42), 6), shade(pastel(p.zone.park, 0.42), -16))
   diamond(ctx, ox, gcy + 5, ew, eh)
   ctx.fill()
 
@@ -402,7 +406,7 @@ function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
     const px = ox + Math.cos(ang) * ew * rad * 0.72
     const py = gcy + Math.sin(ang) * eh * rad * 0.72
     if (onPlate(px, py)) continue // clear of the plate
-    ctx.fillStyle = rgba(sr(i, 3) > 0.5 ? shade(p.zone.park, 16) : shade(p.zone.park, -18), 0.5)
+    ctx.fillStyle = rgba(sr(i, 3) > 0.5 ? shade(pastel(p.zone.park, 0.42), 12) : shade(pastel(p.zone.park, 0.42), -10), 0.5)
     diamond(ctx, px, py, 15 + a * 13, 8 + a * 6)
     ctx.fill()
   }
@@ -417,9 +421,9 @@ function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
     for (let t = 0; t < trees; t++) {
       const tx = px + (sr(i * 9 + t, 17) - 0.5) * 22
       const ty = py + (sr(i * 9 + t, 19) - 0.5) * 13
-      ctx.fillStyle = 'rgba(42,84,42,0.5)'
+      ctx.fillStyle = 'rgba(96,140,92,0.45)'
       ctx.fillRect(tx - 1, ty, 2, 2)
-      ctx.fillStyle = 'rgba(52,100,50,0.92)'
+      ctx.fillStyle = 'rgba(124,170,112,0.9)'
       ctx.beginPath()
       ctx.moveTo(tx, ty - 8)
       ctx.lineTo(tx - 3.5, ty)
@@ -462,7 +466,7 @@ function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
     for (let k = 0; k < 5; k++) {
       const bx = px + (sr(s * 5 + k, 31) - 0.5) * 26
       const bh = 3 + Math.floor(sr(s * 5 + k, 37) * 6)
-      ctx.fillStyle = rgba(shade(p.roof, -8), 0.55)
+      ctx.fillStyle = rgba(shade(pastel(p.roof, 0.3), -6), 0.5)
       ctx.fillRect(bx, py - bh, 3, bh)
     }
   }
@@ -475,7 +479,7 @@ function drawShadow(ctx, b, ox, oy) {
   const hw = TILE_W / 2, hh = TILE_H / 2
   const h = b.height * FLOOR_H
   const dx = 6 + h * 0.5, dy = 3 + h * 0.22 // reach, down-right, scaling with height
-  ctx.fillStyle = rgba('#05070c', 0.2)
+  ctx.fillStyle = rgba('#7a6a86', 0.14) // soft, warm shadow (storybook, not harsh black)
   ctx.beginPath()
   ctx.moveTo(x - hw, y) // base: left → bottom → right (the lit-away edges)
   ctx.lineTo(x, y + hh)
@@ -528,13 +532,16 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0, tod = 0.5) 
     return
   }
 
-  const base = p.zone[b.zone] ?? p.zone.R
-  // per-zone roof: warm residential, cool-glass commercial, flat-dark industrial
-  let roofColor = b.zone === 'C' ? shade(p.zone.C, -24) : b.zone === 'I' ? shade(p.zone.I, -36) : p.roof
+  // Each building takes a soft pastel from COZY (seeded, stable), lightly tinted by its theme/zone hue so
+  // the town is varied + charming but still reads the theme. The roof is the same hue, a touch darker —
+  // so each building is ONE cohesive colour (cleaner than the old per-zone roofs).
+  const accent = COZY[Math.floor(srnd(b.gx * 9 + 1, b.gy * 9 + 7) * COZY.length) % COZY.length]
+  const base = mix(pastel(p.zone[b.zone] ?? p.zone.R, 0.12), accent, 0.62)
+  let roofColor = shade(base, -12)
   // District flavour: a gentle roof tint toward the burn source's hue (cosmetic, grayscale-safe).
-  if (b.district && DISTRICT_HUE[b.district]) roofColor = mix(roofColor, DISTRICT_HUE[b.district], 0.22)
+  if (b.district && DISTRICT_HUE[b.district]) roofColor = mix(roofColor, DISTRICT_HUE[b.district], 0.14)
   // left (sunlit) face — brighter, with a stronger top-to-bottom falloff for sculpted depth
-  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, 30), shade(base, -20))
+  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, 14), shade(base, -6))
   ctx.beginPath()
   ctx.moveTo(x - hw, y)
   ctx.lineTo(x, y + hh)
@@ -543,7 +550,7 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0, tod = 0.5) 
   ctx.closePath()
   ctx.fill()
   // right (shadow) face — deeper shade so the two faces read as a lit solid
-  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, -40), shade(base, -66))
+  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, -8), shade(base, -24))
   ctx.beginPath()
   ctx.moveTo(x + hw, y)
   ctx.lineTo(x, y + hh)
@@ -551,8 +558,8 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0, tod = 0.5) 
   ctx.lineTo(x + hw, y - h)
   ctx.closePath()
   ctx.fill()
-  // contact shading: a touch darker where the two faces meet the ground (ambient occlusion)
-  ctx.strokeStyle = rgba('#05070c', 0.3)
+  // contact shading: a soft, warm settle where the two faces meet the ground (gentle ambient occlusion)
+  ctx.strokeStyle = rgba('#6b5a6e', 0.16)
   ctx.lineWidth = 1.5
   ctx.beginPath()
   ctx.moveTo(x - hw, y)
@@ -562,7 +569,7 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0, tod = 0.5) 
   ctx.lineWidth = 1
   // roof (per-zone colour)
   const ry = y - h
-  ctx.fillStyle = vgrad(ctx, x, ry - hh, x, ry + hh, shade(roofColor, 22), shade(roofColor, -14))
+  ctx.fillStyle = vgrad(ctx, x, ry - hh, x, ry + hh, shade(roofColor, 14), shade(roofColor, -8))
   diamond(ctx, x, ry, hw, hh)
   ctx.fill()
   // front vertical edge highlight
@@ -594,15 +601,7 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0, tod = 0.5) 
     ctx.beginPath(); ctx.moveTo(x + hw * 0.5, ry); ctx.lineTo(x, ry + hh * 0.5); ctx.lineTo(x, ry + hh * 0.5 - sh); ctx.lineTo(x + hw * 0.5, ry - sh); ctx.closePath(); ctx.fill()
     ctx.fillStyle = shade(roofColor, 12); diamond(ctx, x, ry - sh, hw * 0.5, hh * 0.5); ctx.fill()
   }
-  // rooftop clutter: a water tank or vents on mid-rises; an antenna + red beacon on tall towers.
-  if (b.height >= 3 && style !== 2) {
-    if (srnd(b.gx + 5, b.gy + 9) > 0.55) {
-      ctx.fillStyle = shade(roofColor, -30); ctx.fillRect(x + hw * 0.2, ry - 5, 4, 5)
-      ctx.fillStyle = shade(roofColor, 14); ctx.fillRect(x + hw * 0.2, ry - 6, 4, 2)
-    } else {
-      ctx.fillStyle = shade(roofColor, -26); ctx.fillRect(x - hw * 0.4, ry - 3, 3, 3); ctx.fillRect(x - hw * 0.1, ry - 2, 2, 2)
-    }
-  }
+  // (rooftop clutter removed for the cozy look — clean roofs read calmer)
   if (b.height >= 5) {
     ctx.strokeStyle = rgba(shade(roofColor, -46), 0.9)
     ctx.beginPath(); ctx.moveTo(x, ry); ctx.lineTo(x, ry - 9); ctx.stroke()
@@ -623,19 +622,20 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0, tod = 0.5) 
     } else {
       const lightsOn = !stale && infection < 0.5
       for (let f = 0; f < b.height; f++) {
-        const wy = y - f * FLOOR_H - 6
         for (let c = 0; c < 3; c++) {
-          const lx = x - hw + 4 + c * 5
-          const rx = x + 3 + c * 5
-          ctx.fillStyle = rgba(shade(base, -64), 0.85)
-          ctx.fillRect(lx, wy, 2, 3)
-          ctx.fillStyle = rgba(shade(base, -84), 0.85)
-          ctx.fillRect(rx, wy, 2, 3)
+          const u = (c + 0.5) / 3 // across the face width
+          // window rows follow each face's iso slant: the left face drops toward the front, the right rises
+          const lx = x - hw + u * hw, lwy = y + u * hh - f * FLOOR_H - 6
+          const rx = x + u * hw, rwy = y + hh * (1 - u) - f * FLOOR_H - 6
+          ctx.fillStyle = rgba(shade(base, -38), 0.5)
+          ctx.fillRect(lx, lwy, 2, 3)
+          ctx.fillStyle = rgba(shade(base, -52), 0.5)
+          ctx.fillRect(rx, rwy, 2, 3)
           if (lightsOn && litWindow(b.gx + c, b.gy, f, tod)) {
-            ctx.fillStyle = p.window
-            ctx.fillRect(lx, wy, 2, 3)
-            ctx.fillStyle = rgba(p.window, 0.3)
-            ctx.fillRect(lx - 2, wy - 2, 6, 7) // bloom
+            ctx.fillStyle = '#ffe7ad'
+            ctx.fillRect(lx, lwy, 2, 3)
+            ctx.fillStyle = rgba('#ffdf9a', 0.34)
+            ctx.fillRect(lx - 2, lwy - 2, 6, 7) // warm window glow
           }
         }
       }
