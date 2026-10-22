@@ -227,3 +227,28 @@ zoomed; the stale un-zoomed box never burns). Suite 184/184 (+3). Verified in-br
 pan clamps to the city, and clicking the enlarged pyramid burns it (+$10, treasury 7,000,000,500 → 510), no
 console errors. Version → 1.2.0. Both landed as two commits crediting the contributors; the PR branches
 themselves stay open (re-applied with fixes, not fast-forwarded).
+
+## 2026-10-22 — Graphics overhaul (v1.3.0): depth, richer buildings, street life, hi-fi
+
+A full renderer pass across four directions (all requested), staying zero-dep, self-contained, grayscale/
+stale/z-order/determinism-safe, no ctx.ellipse.
+
+- **Depth & lighting:** replaced the per-building drop shadow with a CAST-SHADOW pre-pass (buildings sweep a
+  shadow down-right on the ground, longer for taller ones, so each sits atop its own + neighbours' shadows);
+  stronger directional sun (brighter sunlit face, deeper shadow face) + a contact-AO line where faces meet the
+  ground; a post-process warm key-light wash from the sun side + a stronger vignette.
+- **Richer buildings:** per-building seeded roof STYLE (parapet / pitched ridge / stepped setback) + rooftop
+  clutter (water tanks, vents) and antennae/beacons on tall towers — the skyline reads varied, not boxy.
+- **Street life:** a static tree + warm-streetlight pass lining the avenues (tick-independent, thinned by
+  overgrowth); denser crowds + nicer cars (contact shadow, windshield glint, head/tail light); boat wakes +
+  water reflections.
+- **Hi-fi:** dropped `image-rendering: pixelated` and moved the renderer to a fixed LOGICAL 960×640 space
+  (`LOGICAL_W/H` in draw.js; drawCity/drawAnimals/drawVehicles/drawPyromid use it, not canvas.width). The
+  artifact canvas backing is now 1920×1280 (2×); the boot's frame() bridges them with `ctx.setTransform(S·z…)`
+  where S = canvas.width/960, composing the hi-res scale WITH the zoom. The zoom (setView clamp, canvasPoint)
+  and the Pyromid hit-test now all operate in the same logical 960-space, so the click stays aligned. act-fx
+  canvas bumped to match.
+
+Suite 184/184 (guards intact — the logical-space change is transparent at the 960 test resolution). Verified
+in-browser: crisp at 235% zoom with clear cast shadows, varied rooftops, trees/lamps, boats; the Pyromid click
+burns at BOTH fit (§…500→510) and 235% zoom (→520); no console errors. Version → 1.3.0.

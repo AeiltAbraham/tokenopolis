@@ -145,7 +145,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; background: #0e1017; color: #e8ecf2; display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; }
   #stage { flex: 1 1 560px; max-width: 100%; position: relative; }
-  #city { display: block; width: 100%; background: #0b0d13; border-radius: 12px; image-rendering: pixelated; touch-action: none; }
+  #city { display: block; width: 100%; background: #0b0d13; border-radius: 12px; touch-action: none; }
   #city.zoomed { cursor: grab; }
   #city.panning { cursor: grabbing; }
   .zoom-ctl { position: absolute; right: 12px; bottom: 12px; z-index: 4; display: flex; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: rgba(12,15,22,.7); overflow: hidden; }
@@ -261,8 +261,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 </head>
 <body>
 <div id="stage">
-  <canvas id="city" width="960" height="640" aria-label="Your Tokenopolis city"></canvas>
-  <canvas id="act-fx" width="960" height="640" aria-hidden="true"></canvas>
+  <canvas id="city" width="1920" height="1280" aria-label="Your Tokenopolis city"></canvas>
+  <canvas id="act-fx" width="1920" height="1280" aria-hidden="true"></canvas>
   <div id="act-banner" role="status"><div class="ttl"></div><div class="sub"></div></div>
   <div id="gift-banner" role="status"><span class="gico">🎁</span><span class="gtxt"></span></div>
   <div id="climax-banner" role="status"><div class="ctitle"></div><div class="csub"></div></div>
@@ -340,9 +340,11 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   // sharp at any zoom); the day/night, weather and outbreak washes stay in SCREEN space (identity transform).
   var view = { z: 1, x: 0, y: 0 };
   var ZOOM_MIN = 1, ZOOM_MAX = 6;
+  var LW = 960, LH = 640; // logical render space; the canvas backing may be larger (hi-res) — S bridges them
   function frame() {
     var k = tick++;
-    if (ctx.setTransform) ctx.setTransform(view.z, 0, 0, view.z, view.x, view.y);
+    var S = (canvas.width || LW) / LW; // backing-resolution factor: logical 960 → the hi-res canvas, through the zoom
+    if (ctx.setTransform) ctx.setTransform(S * view.z, 0, 0, S * view.z, S * view.x, S * view.y);
     drawCity(ctx, DATA.scene, DATA.theme, k);
     if (ctx.setTransform) ctx.setTransform(1, 0, 0, 1, 0, 0);
     // Living city: day/night tint + seasonal weather, keyed off the viewer's clock (screen-space overlays).
@@ -715,10 +717,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   if (canvas && canvas.addEventListener && typeof pyromidHitsAt === 'function') {
     canvas.addEventListener('click', function (ev) {
       if (!DATA.scene) return;
-      var rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: canvas.width, height: canvas.height };
-      var sx = (ev.clientX - rect.left) * (canvas.width / (rect.width || canvas.width));
-      var sy = (ev.clientY - rect.top) * (canvas.height / (rect.height || canvas.height));
-      if (pyromidHitsAt(DATA.scene, canvas.width, canvas.height, view, sx, sy, (DATA.pyromid && DATA.pyromid.progress) || 0)) burnPyro();
+      var pt = canvasPoint(ev); // client → logical 960×640, the same space the Pyromid is drawn in
+      if (pyromidHitsAt(DATA.scene, LW, LH, view, pt[0], pt[1], (DATA.pyromid && DATA.pyromid.progress) || 0)) burnPyro();
     });
   }
 
@@ -727,8 +727,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   var zoomFit = document.getElementById('zoom-fit');
   function setView(z, x, y) {
     view.z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
-    view.x = Math.min(0, Math.max(canvas.width - canvas.width * view.z, x));
-    view.y = Math.min(0, Math.max(canvas.height - canvas.height * view.z, y));
+    view.x = Math.min(0, Math.max(LW - LW * view.z, x)); // clamp in logical space so the view never leaves the city
+    view.y = Math.min(0, Math.max(LH - LH * view.z, y));
     if (zoomFit) zoomFit.textContent = Math.round(view.z * 100) + '%';
     if (canvas.classList) canvas.classList.toggle('zoomed', view.z > 1);
     frame();
@@ -739,8 +739,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     setView(z, cx - (cx - view.x) * r, cy - (cy - view.y) * r);
   }
   function canvasPoint(e) {
-    var r = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: canvas.width, height: canvas.height };
-    return [(e.clientX - r.left) * canvas.width / (r.width || canvas.width), (e.clientY - r.top) * canvas.height / (r.height || canvas.height)];
+    var r = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: LW, height: LH };
+    return [(e.clientX - r.left) * LW / (r.width || LW), (e.clientY - r.top) * LH / (r.height || LH)]; // → logical 960×640
   }
   if (canvas.addEventListener) {
     // A wheel, and a trackpad pinch in Chrome/Firefox (a wheel with ctrlKey): finer steps for the pinch.
@@ -775,8 +775,8 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     canvas.addEventListener('dblclick', function () { setView(1, 0, 0); });
   }
   var zoomIn = document.getElementById('zoom-in'), zoomOut = document.getElementById('zoom-out');
-  if (zoomIn && zoomIn.addEventListener) zoomIn.addEventListener('click', function () { zoomAt(1.5, canvas.width / 2, canvas.height / 2); });
-  if (zoomOut && zoomOut.addEventListener) zoomOut.addEventListener('click', function () { zoomAt(1 / 1.5, canvas.width / 2, canvas.height / 2); });
+  if (zoomIn && zoomIn.addEventListener) zoomIn.addEventListener('click', function () { zoomAt(1.5, LW / 2, LH / 2); });
+  if (zoomOut && zoomOut.addEventListener) zoomOut.addEventListener('click', function () { zoomAt(1 / 1.5, LW / 2, LH / 2); });
   if (zoomFit && zoomFit.addEventListener) zoomFit.addEventListener('click', function () { setView(1, 0, 0); });
   // ---- Live growth: poll /state and update the city + numbers in place (no reload) when served locally. ----
   function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }

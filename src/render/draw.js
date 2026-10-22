@@ -63,10 +63,16 @@ function vgrad(ctx, x0, y0, x1, y1, c0, c1) {
   return g
 }
 
+// Logical render space. The city is always drawn in 960×640 logical units; the artifact's frame() scales
+// that onto a higher-resolution backing canvas (and through the zoom) via ctx.setTransform, so the whole
+// scene — including the Pyromid anchor and the zoom math — shares ONE coordinate system.
+export const LOGICAL_W = 960
+export const LOGICAL_H = 640
+
 export function drawCity(ctx, scene, theme, tick = 0) {
   const p = theme && typeof theme === 'object' ? theme : resolveTheme(theme)
-  const W = ctx.canvas?.width ?? 960
-  const H = ctx.canvas?.height ?? 640
+  const W = LOGICAL_W
+  const H = LOGICAL_H
   const ox = W / 2
   const oy = H * 0.3
   const stale = (scene.vitality ?? 0) < 0.34
@@ -139,6 +145,10 @@ export function drawCity(ctx, scene, theme, tick = 0) {
 
   mark(ctx, 'buildings')
   const order = [...scene.buildings].sort((a, b) => a.gx + a.gy - (b.gx + b.gy))
+  // Pass 1: cast shadows pool on the ground (the sun is upper-left), so each building sits atop its own
+  // AND its neighbours' shadows — a big depth cue. Flat parks and rubble cast nothing.
+  for (const b of order) if (b.height > 0 && !b.collapsed && b.zone !== 'park') drawShadow(ctx, b, ox, oy)
+  // Pass 2: the buildings themselves, back-to-front.
   for (const b of order) drawBuilding(ctx, b, p, ox, oy, tick, stale, scene.infection ?? 0)
 
   mark(ctx, 'landmarks')
@@ -147,6 +157,7 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   drawOvergrowth(ctx, scene, ox, oy) // nature reclaims a stagnant/overrun city
 
   mark(ctx, 'citizens')
+  drawStreetFurniture(ctx, scene, ox, oy) // static trees + lamps lining the avenues (behind the moving life)
   drawCitizens(ctx, scene, p, ox, oy, tick, stale)
   drawAnimals(ctx, scene, ox, oy, tick, stale)
   drawVehicles(ctx, scene, ox, oy, tick, stale)
@@ -165,10 +176,16 @@ export function drawCity(ctx, scene, theme, tick = 0) {
     ctx.stroke()
     ctx.lineWidth = 1
   }
-  // vignette for mood/depth
-  const vg = ctx.createRadialGradient(ox, oy + H * 0.18, H * 0.18, ox, oy + H * 0.18, H * 0.8)
+  // --- post-process: a warm key-light wash from the sun side, then a vignette for depth/mood ---
+  const sun = ctx.createRadialGradient(ox - W * 0.22, oy - H * 0.05, 10, ox - W * 0.22, oy - H * 0.05, W * 0.72)
+  sun.addColorStop(0, night ? 'rgba(150,170,255,0.06)' : 'rgba(255,238,200,0.13)')
+  sun.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = sun
+  ctx.fillRect(0, 0, W, H)
+  const vg = ctx.createRadialGradient(ox, oy + H * 0.2, H * 0.16, ox, oy + H * 0.2, H * 0.85)
   vg.addColorStop(0, 'rgba(0,0,0,0)')
-  vg.addColorStop(1, night ? 'rgba(0,0,0,0.5)' : 'rgba(8,10,18,0.26)')
+  vg.addColorStop(0.68, 'rgba(0,0,0,0)')
+  vg.addColorStop(1, night ? 'rgba(0,0,0,0.56)' : 'rgba(10,12,22,0.34)')
   ctx.fillStyle = vg
   ctx.fillRect(0, 0, W, H)
 }
@@ -184,22 +201,55 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
   // Density scales with the metrics: a bigger, livelier city teems; a sleepy one goes quiet.
   // A festival gift (market, marathon, World's Fair) thickens the crowd.
   const vit = scene.vitality ?? 1
-  const fest = scene.flags && scene.flags.festival ? 1.35 : 1
-  const count = Math.min(170, Math.round((8 + n * 6) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.12) * fest))
+  const fest = scene.flags && scene.flags.festival ? 1.4 : 1
+  const count = Math.min(240, Math.round((10 + n * 8) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.14) * fest))
   for (let i = 0; i < count; i++) {
     const onX = srnd(i, 1) < 0.5 // move along the gx axis (true) or the gy axis (false)
     const lane = Math.round(srnd(i, 2) * n) // which road (grid line)
-    const car = srnd(i, 3) > 0.78
+    const car = srnd(i, 3) > 0.74
     const dir = srnd(i, 5) > 0.5 ? 1 : -1
     const speed = car ? 0.02 : 0.009
     const f = (((srnd(i, 6) + dir * tick * speed) % 1) + 1) % 1
     const pos = onX ? iso(f * n, lane, ox, oy) : iso(lane, f * n, ox, oy)
     if (car) {
-      ctx.fillStyle = CAR_COLORS[i % CAR_COLORS.length]
-      ctx.fillRect(pos.x - 2, pos.y - 2, 4, 3)
+      ctx.fillStyle = rgba('#05070c', 0.3) // little contact shadow
+      ctx.fillRect(pos.x - 2, pos.y, 5, 2)
+      ctx.fillStyle = CAR_COLORS[i % CAR_COLORS.length] // body
+      ctx.fillRect(pos.x - 2, pos.y - 2, 5, 3)
+      ctx.fillStyle = 'rgba(255,255,255,0.35)' // roof/windshield glint
+      ctx.fillRect(pos.x - 1, pos.y - 2, 3, 1)
+      ctx.fillStyle = dir > 0 ? 'rgba(255,240,180,0.95)' : 'rgba(255,90,80,0.9)' // head/tail light
+      ctx.fillRect(pos.x + (dir > 0 ? 2 : -2), pos.y - 1, 1, 1)
     } else {
-      ctx.fillStyle = rgba(p.accent, 0.85)
-      ctx.fillRect(pos.x - 1, pos.y - 1, 2, 2)
+      ctx.fillStyle = rgba(p.accent, 0.9)
+      ctx.fillRect(pos.x - 1, pos.y - 2, 2, 3) // a taller dot reads more as a person
+    }
+  }
+}
+
+// Static street dressing: trees and warm streetlights punctuate the avenues. Tick-independent (seeded by
+// position) so stale frames hold still; thinned as nature reclaims an overgrown city.
+function drawStreetFurniture(ctx, scene, ox, oy) {
+  const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
+  if (n < 2) return
+  const keep = 0.85 - Math.min(0.72, (scene.overgrowth ?? 0) * 0.85) // nature reclaims it: more overgrowth → fewer survive
+  for (let gx = 0; gx <= n; gx++) {
+    for (let gy = 0; gy <= n; gy++) {
+      const r = srnd(gx * 2 + 1, gy * 2 + 3)
+      if (r > keep) continue
+      const pt = iso(gx, gy, ox, oy)
+      if (r < keep * 0.5) {
+        // a tree: trunk + a two-tone canopy
+        ctx.fillStyle = 'rgba(70,52,34,0.9)'; ctx.fillRect(pt.x - 1, pt.y - 5, 2, 5)
+        ctx.fillStyle = 'rgba(54,104,50,0.92)'; ctx.beginPath(); ctx.arc(pt.x, pt.y - 7, 4, 0, 6.3); ctx.fill()
+        ctx.fillStyle = 'rgba(100,154,84,0.85)'; ctx.beginPath(); ctx.arc(pt.x - 1.2, pt.y - 8, 2, 0, 6.3); ctx.fill()
+      } else {
+        // a streetlight: a thin pole + a warm lamp head
+        ctx.strokeStyle = 'rgba(38,42,52,0.85)'; ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(pt.x, pt.y); ctx.lineTo(pt.x, pt.y - 9); ctx.stroke()
+        ctx.fillStyle = 'rgba(255,214,120,0.95)'; ctx.fillRect(pt.x - 1, pt.y - 10, 2, 2)
+        ctx.fillStyle = 'rgba(255,214,120,0.22)'; ctx.beginPath(); ctx.arc(pt.x, pt.y - 9, 4, 0, 6.3); ctx.fill()
+      }
     }
   }
 }
@@ -248,7 +298,7 @@ function drawAnimals(ctx, scene, ox, oy, tick, stale) {
   if (stale || (scene.infection ?? 0) >= 0.5) return
   const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
   if (n < 1) return
-  const W = ctx.canvas?.width ?? 960
+  const W = LOGICAL_W
   const vit = scene.vitality ?? 1
   // An aviary gift fills the sky with more flocks; a zoo/aquarium gift puts wildlife on the ground.
   const aviary = scene.flags && scene.flags.aviary ? 1.8 : 1
@@ -284,8 +334,8 @@ function drawAnimals(ctx, scene, ox, oy, tick, stale) {
 function drawVehicles(ctx, scene, ox, oy, tick, stale) {
   if (stale) return
   const serv = scene.services || {}
-  const W = ctx.canvas?.width ?? 960
-  const H = ctx.canvas?.height ?? 640
+  const W = LOGICAL_W
+  const H = LOGICAL_H
   if (serv.airport) {
     for (let i = 0; i < 2; i++) {
       const y = 28 + i * 22
@@ -298,28 +348,49 @@ function drawVehicles(ctx, scene, ox, oy, tick, stale) {
     }
   }
   if (serv.harbour) {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       const r = srnd(i, 71)
       const bx = 40 + ((srnd(i, 73) * (W - 80) + tick * (0.2 + r * 0.3)) % (W - 80))
       const by = H - 38 - r * 46
-      ctx.fillStyle = 'rgba(70,92,112,0.9)'
+      ctx.fillStyle = 'rgba(180,200,224,0.12)' // shimmering reflection on the water
+      ctx.fillRect(bx + 1, by + 3, 6, 5 + Math.round(r * 4))
+      ctx.fillStyle = 'rgba(255,255,255,0.1)' // wake
+      ctx.fillRect(bx - 3, by + 1, 3, 1)
+      ctx.fillStyle = 'rgba(70,92,112,0.95)' // hull
       ctx.fillRect(bx, by, 8, 3)
-      ctx.fillStyle = 'rgba(200,210,220,0.8)'
+      ctx.fillStyle = 'rgba(210,218,228,0.85)'
       ctx.fillRect(bx + 3, by - 4, 1, 4) // mast
     }
   }
 }
+
+// Cast shadow for a building: the sun is upper-left, so the shadow is the base footprint swept down-right,
+// longer for taller buildings. Geometry depends on height + position only (grayscale/stale-safe).
+function drawShadow(ctx, b, ox, oy) {
+  const { x, y } = iso(b.gx, b.gy, ox, oy)
+  const hw = TILE_W / 2, hh = TILE_H / 2
+  const h = b.height * FLOOR_H
+  const dx = 6 + h * 0.5, dy = 3 + h * 0.22 // reach, down-right, scaling with height
+  ctx.fillStyle = rgba('#05070c', 0.2)
+  ctx.beginPath()
+  ctx.moveTo(x - hw, y) // base: left → bottom → right (the lit-away edges)
+  ctx.lineTo(x, y + hh)
+  ctx.lineTo(x + hw, y)
+  ctx.lineTo(x + hw + dx, y + dy) // swept copy, offset down-right
+  ctx.lineTo(x + dx, y + hh + dy)
+  ctx.lineTo(x - hw + dx, y + dy)
+  ctx.closePath()
+  ctx.fill()
+}
+
+// Per-building seeded style (stable across ticks + palettes): 0 flat/parapet, 1 pitched, 2 stepped setback.
+const roofStyle = (b) => (b.height >= 2 ? Math.floor(srnd(b.gx * 3 + 1, b.gy * 3 + 7) * 3) : 0)
 
 function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
   const { x, y } = iso(b.gx, b.gy, ox, oy)
   const hw = TILE_W / 2
   const hh = TILE_H / 2
   const h = b.height * FLOOR_H
-
-  // soft drop shadow (depth)
-  ctx.fillStyle = rgba('#000000', 0.18)
-  diamond(ctx, x + 5, y + 4, hw * 0.9, hh * 0.9)
-  ctx.fill()
 
   if (b.zone === 'park') {
     ctx.fillStyle = vgrad(ctx, x, y - hh, x, y + hh, shade(p.zone.park, 20), shade(p.zone.park, -14))
@@ -345,8 +416,8 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
   let roofColor = b.zone === 'C' ? shade(p.zone.C, -24) : b.zone === 'I' ? shade(p.zone.I, -36) : p.roof
   // District flavour: a gentle roof tint toward the burn source's hue (cosmetic, grayscale-safe).
   if (b.district && DISTRICT_HUE[b.district]) roofColor = mix(roofColor, DISTRICT_HUE[b.district], 0.22)
-  // left (sunlit) face
-  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, 14), shade(base, -24))
+  // left (sunlit) face — brighter, with a stronger top-to-bottom falloff for sculpted depth
+  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, 30), shade(base, -20))
   ctx.beginPath()
   ctx.moveTo(x - hw, y)
   ctx.lineTo(x, y + hh)
@@ -354,8 +425,8 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
   ctx.lineTo(x - hw, y - h)
   ctx.closePath()
   ctx.fill()
-  // right (shadow) face
-  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, -30), shade(base, -56))
+  // right (shadow) face — deeper shade so the two faces read as a lit solid
+  ctx.fillStyle = vgrad(ctx, x, y - h, x, y, shade(base, -40), shade(base, -66))
   ctx.beginPath()
   ctx.moveTo(x + hw, y)
   ctx.lineTo(x, y + hh)
@@ -363,31 +434,62 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
   ctx.lineTo(x + hw, y - h)
   ctx.closePath()
   ctx.fill()
+  // contact shading: a touch darker where the two faces meet the ground (ambient occlusion)
+  ctx.strokeStyle = rgba('#05070c', 0.3)
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(x - hw, y)
+  ctx.lineTo(x, y + hh)
+  ctx.lineTo(x + hw, y)
+  ctx.stroke()
+  ctx.lineWidth = 1
   // roof (per-zone colour)
-  ctx.fillStyle = vgrad(ctx, x, y - h - hh, x, y - h + hh, shade(roofColor, 18), shade(roofColor, -12))
-  diamond(ctx, x, y - h, hw, hh)
+  const ry = y - h
+  ctx.fillStyle = vgrad(ctx, x, ry - hh, x, ry + hh, shade(roofColor, 22), shade(roofColor, -14))
+  diamond(ctx, x, ry, hw, hh)
   ctx.fill()
   // front vertical edge highlight
-  ctx.strokeStyle = rgba('#ffffff', 0.12)
+  ctx.strokeStyle = rgba('#ffffff', 0.14)
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.moveTo(x, y + hh)
-  ctx.lineTo(x, y + hh - h)
+  ctx.lineTo(x, ry + hh)
   ctx.stroke()
-  // rooftop detail: antenna on tall towers (red beacon when very tall), vent on industrial
+  // --- roof style (seeded per building; grayscale-safe geometry, tick-independent) ---
+  const style = roofStyle(b)
+  if (style === 0 && b.height > 0) {
+    // parapet: a raised rim — an inset, slightly darker inner roof
+    ctx.fillStyle = vgrad(ctx, x, ry - hh, x, ry + hh, shade(roofColor, 6), shade(roofColor, -26))
+    diamond(ctx, x, ry - 1, hw * 0.68, hh * 0.68)
+    ctx.fill()
+  } else if (style === 1) {
+    // pitched: a ridge along the roof (lit spine + a shadow slope)
+    ctx.strokeStyle = rgba(shade(roofColor, 28), 0.9)
+    ctx.beginPath(); ctx.moveTo(x - hw * 0.6, ry + hh * 0.3); ctx.lineTo(x, ry - hh * 0.55); ctx.lineTo(x + hw * 0.6, ry + hh * 0.3); ctx.stroke()
+    ctx.strokeStyle = rgba(shade(roofColor, -34), 0.7)
+    ctx.beginPath(); ctx.moveTo(x, ry - hh * 0.55); ctx.lineTo(x, ry + hh * 0.5); ctx.stroke()
+  } else if (style === 2 && b.height >= 3) {
+    // stepped setback: a penthouse box raised above the roof
+    const sh = FLOOR_H * 0.7
+    ctx.fillStyle = vgrad(ctx, x, ry - sh, x, ry, shade(base, 26), shade(base, -16))
+    ctx.beginPath(); ctx.moveTo(x - hw * 0.5, ry); ctx.lineTo(x, ry + hh * 0.5); ctx.lineTo(x, ry + hh * 0.5 - sh); ctx.lineTo(x - hw * 0.5, ry - sh); ctx.closePath(); ctx.fill()
+    ctx.fillStyle = vgrad(ctx, x, ry - sh, x, ry, shade(base, -42), shade(base, -64))
+    ctx.beginPath(); ctx.moveTo(x + hw * 0.5, ry); ctx.lineTo(x, ry + hh * 0.5); ctx.lineTo(x, ry + hh * 0.5 - sh); ctx.lineTo(x + hw * 0.5, ry - sh); ctx.closePath(); ctx.fill()
+    ctx.fillStyle = shade(roofColor, 12); diamond(ctx, x, ry - sh, hw * 0.5, hh * 0.5); ctx.fill()
+  }
+  // rooftop clutter: a water tank or vents on mid-rises; an antenna + red beacon on tall towers.
+  if (b.height >= 3 && style !== 2) {
+    if (srnd(b.gx + 5, b.gy + 9) > 0.55) {
+      ctx.fillStyle = shade(roofColor, -30); ctx.fillRect(x + hw * 0.2, ry - 5, 4, 5)
+      ctx.fillStyle = shade(roofColor, 14); ctx.fillRect(x + hw * 0.2, ry - 6, 4, 2)
+    } else {
+      ctx.fillStyle = shade(roofColor, -26); ctx.fillRect(x - hw * 0.4, ry - 3, 3, 3); ctx.fillRect(x - hw * 0.1, ry - 2, 2, 2)
+    }
+  }
   if (b.height >= 5) {
     ctx.strokeStyle = rgba(shade(roofColor, -46), 0.9)
-    ctx.beginPath()
-    ctx.moveTo(x, y - h)
-    ctx.lineTo(x, y - h - 9)
-    ctx.stroke()
-    if (b.height >= 7) {
-      ctx.fillStyle = tick % 2 === 0 ? '#ff5a5a' : rgba('#ff5a5a', 0.3)
-      ctx.fillRect(x - 1, y - h - 10, 2, 2)
-    }
-  } else if (b.zone === 'I') {
-    ctx.fillStyle = shade(roofColor, -22)
-    ctx.fillRect(x - 3, y - h - 3, 6, 3)
+    ctx.beginPath(); ctx.moveTo(x, ry); ctx.lineTo(x, ry - 9); ctx.stroke()
+    if (b.height >= 7) { ctx.fillStyle = tick % 2 === 0 ? '#ff5a5a' : rgba('#ff5a5a', 0.3); ctx.fillRect(x - 1, ry - 10, 2, 2) }
   }
 
   // windows: a dim base grid always; lit windows add a glow + bloom. A boarded facade shows planks
@@ -481,8 +583,8 @@ function drawPyromid(ctx, scene, tick) {
   const py = scene.pyromid
   if (!py) return
   const prog = Math.max(0, Math.min(1, py.progress ?? 0))
-  const W = ctx.canvas?.width ?? 960
-  const H = ctx.canvas?.height ?? 640
+  const W = LOGICAL_W
+  const H = LOGICAL_H
   const a = pyromidAnchor(scene, W, H)
   const x = a.x, y = a.y, bw = a.bw
   const h = a.fullH * (0.1 + 0.9 * prog) // a foundation that rises to the full height at completion
