@@ -80,25 +80,31 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
     const gx = i % side
     const gy = Math.floor(i / side)
     const dist = center > 0 ? Math.hypot(gx - center, gy - center) / center : 0
-    const landValue = clamp01(1 - dist) // taller toward the centre
+    const landValue = clamp01(1 - dist) // taller + denser toward the centre
     const zone = ZONE_BAG[Math.floor(rnd() * ZONE_BAG.length)]
-    const baseHeight = zone === 'park' ? 0 : 1 + Math.round(landValue * (2 + sizeIndex) + rnd() * 2)
+    // Steeper height falloff: a towering downtown that steps down to low-rise outskirts.
+    const baseHeight = zone === 'park' ? 0 : 1 + Math.round(landValue * landValue * (3 + sizeIndex * 1.25) + rnd() * 1.5)
     const dmgRnd = rnd()
+    const vac = rnd()
     const damage = clamp01(stress * (0.6 + 0.8 * dmgRnd))
     const collapsed = dmgRnd < collapseRatio // buildings in the fallen gap become rubble (decay OR disaster)
+    // Density gradient: the edge of the city is sparse — undeveloped lots thin out toward the outskirts
+    // (common at the fringe, rare downtown), so the footprint reads as centre → outskirts, not a solid slab.
+    const vacant = zone !== 'park' && !collapsed && vac > 0.42 + 0.5 * landValue
     // District (burn source): 3×3 blocks share a district → visible clusters; size scales with the mix.
     const district = dhash(Math.floor(gx / 3) * 131 + Math.floor(gy / 3), (citySeed >>> 0) ^ 0x51ed51ed) < techShare ? 'tech' : 'ops'
-    const boarded = !collapsed && baseHeight > 0 && dmgRnd < boardRatio // windows planked over (decay/outbreak)
+    const boarded = !collapsed && !vacant && baseHeight > 0 && dmgRnd < boardRatio // windows planked over (decay/outbreak)
     buildings.push({
       gx,
       gy,
       zone,
       district,
-      height: collapsed ? Math.max(0, Math.round(baseHeight * 0.3)) : baseHeight,
+      height: vacant ? 0 : collapsed ? Math.max(0, Math.round(baseHeight * 0.3)) : baseHeight,
       density: aggregated ? Math.round(perPrimitive) : 1,
       damage,
       collapsed,
       boarded,
+      vacant,
     })
   }
 
@@ -131,6 +137,7 @@ export function sceneFor(cityState, citySeed, sourceMix = 0.5) {
 
   const primitiveCount = buildings.length + underground.length + landmarks.length
   return {
+    seed: citySeed >>> 0, // exposed so the renderer can lay out this city's surrounding countryside deterministically
     scaleIndex: effective,
     sizeIndex,
     scaleName: nameForScale(sizeIndex),

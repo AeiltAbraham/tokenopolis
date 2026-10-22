@@ -274,3 +274,106 @@ added a weatherOf guard + extended the drawWeather test to the new labels. Suite
 sky-preview grid: sun arcs dawn→noon→sunset, night shows the moon + stars, and rain/fog/overcast/snow all
 render. Version → 1.4.0. STILL TO DO (next): the Pyromid as a growing construction site OUTSIDE the city
 (cranes, trucks, scaffolding), and a more realistic world (dense centre → outskirts → countryside between cities).
+
+## 2026-10-22 — A world around the city + the Pyromid construction site (v1.5.0)
+
+The city now sits in a believable landscape, and the Pyromid is a megaproject OUTSIDE it.
+
+- **Density gradient (scene.js):** a steeper height falloff (towering downtown → low-rise outskirts) plus a
+  new `vacant` flag — undeveloped lots thin out toward the fringe (rare downtown, common at the edge), so the
+  footprint reads centre → outskirts instead of a solid slab. `seed` is now exposed on the scene so the
+  renderer can lay out this city's surroundings deterministically. Vacant cells render as bare gravel/weed lots.
+- **Countryside (draw.js `drawCountryside`, in the ground layer):** a broad field plate beyond the city with a
+  farmland patchwork, forest clusters, a river sweeping the lower-left, roads leading out of the city toward the
+  horizon, and a few tiny distant towns ("the space between cities"). Deterministic (seeded by the city +
+  position), tick-independent, palette-tinted but palette-independent in GEOMETRY. No ctx.ellipse.
+- **Pyromid outside + construction site (draw.js):** `pyromidAnchor` moved to the front-right countryside
+  (iso(n·1.3, n·0.8)) — the hit-test follows the anchor automatically, so the click stays aligned. While
+  building (`progress < 0.995`) it shows a graded dirt lot, scaffold rungs on the rising faces, two flanking
+  tower cranes (jibs over the pyramid, slowly-bobbing hooks), and parked trucks; all recede at completion,
+  leaving the gleaming pyramid + gold capstone.
+
+Guards intact (scene determinism + length, grayscale, LOD, z-order, stale-frames, the vm boot — the guard
+scenes have no pyromid, so the crane's tick-bob is test-safe). Suite 185/185. Verified in-browser: the city in
+rolling countryside with a river/farms/forest/roads/distant towns, a clear dense-centre→sparse-outskirts
+gradient, and the Pyromid as a cranes-and-trucks construction site outside the city — the relocated click
+still burns at 246% zoom, no console errors. Version → 1.5.0.
+
+### v1.5.0 refinements — countryside polish, a review fix, and clock-driven life (same version, still unreleased)
+
+Three follow-ups off user feedback + the adversarial world-review (workflow wwjk3odtt). NOTE: the "crane
+tick-bob is test-safe" claim above was wrong — it was a real latent invariant break, now fixed (below).
+
+- **Roads + river no longer flat/grey (user: "grey lines and the sea … too pixelated and flat").** The in-city
+  road grid is now a soft ground-tinted paved look (`rgba(shade(p.ground,-20),0.5)`) instead of a hard grey
+  lattice (very visible now the outskirts have open lots). The countryside lanes became soft tapering strips
+  that fade into the fields (perspective trapezoids + a faint centre crown), not constant-width grey strokes.
+  The river was reworked from a flat 4-gon into a meandering water body: a 3-stop depth gradient, wavier banks
+  (no straight cut), a lit shelving shore, and faceted iso water-tile highlights (same diamond language as the
+  ground, big enough to hold at display scale). All still deterministic + tick-independent, geometry
+  palette-independent, no ctx.ellipse. Verified in-browser at magnification — reads as a river, not a slab.
+- **Review fix (CONFIRMED medium): the construction crane's hook was tick-dependent GEOMETRY and NOT
+  stale-gated** (`hl = 24 + Math.sin((tick+cs·5)·0.06)·7` → moveTo/lineTo/fillRect drift every frame). A city
+  that burned enough to start the Pyromid then went quiet (stale + mid-build, reachable via idle-decay or the
+  fallout path) would animate while "stale holds still" says it must not — the existing stale guard couldn't
+  catch it because its scene has `pyromid:null`. Fixed: `drawPyromid` derives `stale` and the hook hangs still
+  when stale (`hl = 24 + (stale ? 0 : …)`); header contract corrected. Added guard `a stale city
+  mid-Pyromid-build also holds still` (stale scene + `pyromid:{progress:0.5}`). **Mutation-checked:** removed
+  the `stale ?` gate → guard RED (`not ok … crane hook must not drift`) → reverted → green.
+- **Window lights + street life now track the LOCAL CLOCK, not the frame tick (user: "sun up → fewer lit,
+  don't flicker, steady; getting dark → more windows; from 23:00 people sleep, movement dies down").** Replaced
+  the per-tick `lit()` twinkle with clock-driven curves in draw.js (exported `lampFraction`/`streetActivity`,
+  piecewise-linear keyframes): windows near-dark by day (a few always-on), filling through dusk to a ~22:00
+  peak, thinning after 23:00 as people sleep; a window lights when its fixed personality crosses the hour's
+  fraction (so it comes on at dusk and STAYS on, then goes dark — steady, not reshuffling) with a slow 5-minute
+  wobble for the odd on/off. Street + flock counts scale by `streetActivity(tod)` so movement dies down at
+  night and refills by day. `drawCity` gained a `tod` param (default 0.5 = noon, so existing 4-arg test calls
+  are unchanged); the boot computes one local `tod` per frame and feeds both the windows and the sky, so they
+  agree. **Twinkle guard rewritten WITH USER APPROVAL** (`draw.test.js` "window lights … hold steady across
+  frames") — asserts the new invariant: identical lit-set across adjacent ticks at a fixed clock, and more lit
+  at evening than midday; plus a curve unit test (bounded, dark-day/lit-evening/sleep-after-23:00). **Mutation-
+  checked (two mutants):** (M1) windows made tick-dependent (`tod + tick·0.02` at the call site) → the steady
+  assertion RED; (M2) `lampFraction → 0.3` constant → the curve guard RED. Both reverted → green.
+
+Suite 187/187 (185 + the stale-Pyromid guard + the curve test; twinkle rewritten in place), 0 non-flaky
+failures (the `poke` cold-start timing test stays environmentally flaky). Verified in-browser: noon shows dark
+windows, 20:00 lights them up, and the river/roads read as landscape rather than flat shapes. Still v1.5.0,
+uncommitted — keeper NOT yet restarted onto it.
+
+### v1.5.0 — sea removed + real location/weather ("Tokenopolis near <city>")
+
+User: "Remove the sea; show weather and time based on location — but say 'Tokenopolis near <real city>'."
+
+- **Sea removed (draw.js `drawCountryside`):** the whole river block is gone; the farmland + forest loops
+  dropped their river-clearance clauses so fields/forest fill the lower-left (no empty gap). Verified in-browser.
+- **Real location + weather (new `src/geoweather.js`, KEEPER-SIDE only, never bundled):** IP → city via
+  ipwho.is (primary) / ipapi.co (fallback), keyless HTTPS with a User-Agent (ipapi.co returns empty without
+  one); current weather + temp via open-meteo (WMO code → our 5 labels via `weatherLabelFromCode`). A
+  failure-tolerant module cache (`refreshGeoWeather` injectable + never throws; `getCachedGeoWeather`). The
+  resolved city/weather are BAKED into the artifact JSON, so a shared copy still works (client geolocation +
+  external fetch are blocked in the artifact sandbox). **Privacy:** the IP is sent only to resolve a
+  city-level name + coarse coords, never logged or stored. Everything degrades to null → fall back to the local
+  clock + the deterministic `weatherOf()`.
+- **Wiring:** `cityData(state, config, env = getCachedGeoWeather())` bakes `readout.locationCity/weather/tempC`
+  (one chokepoint — both the baked HTML and the `/state` poll flow through it). The h1 (`id="cityname"`) +
+  `<title>` show "<cityName> near <city>"; the clockline shows real weather + "· N°C"; the sky `drawWeather`
+  uses the real label (fallback `weatherOf`). `service/main.js` runs a crash-safe 15-min refresh loop.
+- **Adversarial review (workflow wbyglsyqa) — 5/5 confirmed, all fixed:**
+  (A, main.js) the post-resolve `run()` was a **no-op** — `tick()` skips `writeArtifact` on an unchanged sim,
+  so the baked city only appeared incidentally; now a successful resolve calls `writeArtifact(…)` directly.
+  (B, artifact.js `applyLive`) the wholesale `DATA.readout = s.readout` **nulled real weather** during the
+  ~10s keeper warmup → flicker to fake weather; now the last-known location/weather are carried forward when
+  the incoming values are null. (C, same) the **h1/<title> never re-rendered**, stranding "near <city>" on a
+  tab opened before geo resolved; `applyLive` now re-renders them (via `#cityname`, using `textContent` so the
+  API city name can't inject markup). (D, geoweather.js) a weather-API failure **discarded the resolved city
+  too**; cold-start now surfaces the city with weather=null (sky falls back), while a transient failure keeps
+  the last good weather.
+- **New tests:** `test/geoweather.test.js` (WMO mapping, env build/cache, offline→null, weather-fails-keeps-
+  last, **cold-start city-without-weather**, thrown-fetcher-swallowed) + 2 `cityData`-env tests in
+  artifact.test.js (near-city render + self-containment; offline fallback). **Mutation-checked:** (M1) revert
+  Fix D → the cold-start test RED (keeps-last-good still green); (M2) drop `id="cityname"` → both location
+  tests RED. Both reverted → green.
+
+Suite 195/195, 0 non-flaky failures. Verified live on the keeper after restart: "Tokenopolis near Almunecar ·
+☀ Clear · 23°C" (real local time + real weather), sea gone, 0 external URLs in city.html. Still v1.5.0,
+uncommitted.

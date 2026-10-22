@@ -15,8 +15,34 @@ const mark = (ctx, layer) => {
   if (typeof ctx.__layer === 'function') ctx.__layer(layer)
 }
 const iso = (gx, gy, ox, oy) => ({ x: ox + (gx - gy) * (TILE_W / 2), y: oy + (gx + gy) * (TILE_H / 2) })
-// Deterministic "is this window lit this tick" — coprime tick multiplier so it animates each frame.
-const lit = (gx, gy, f, tick) => (gx * 7 + gy * 13 + f * 17 + tick) % 5 === 0
+// Window lighting (and street activity) track the LOCAL CLOCK, not the frame tick — so lights hold steady
+// and never flicker. hourOf maps a 0..1 time-of-day to 0..24; kfLerp interpolates piecewise-linear
+// keyframes [hour, value]. Both curves are pure + exported for unit tests.
+const hourOf = (tod) => ((((tod % 1) + 1) % 1) * 24)
+const kfLerp = (kf, x) => {
+  if (x <= kf[0][0]) return kf[0][1]
+  for (let i = 1; i < kf.length; i++) {
+    if (x <= kf[i][0]) return kf[i - 1][1] + (kf[i][1] - kf[i - 1][1]) * ((x - kf[i - 1][0]) / (kf[i][0] - kf[i - 1][0]))
+  }
+  return kf[kf.length - 1][1]
+}
+// Fraction of a building's windows lit as the clock turns: near-dark by day (a few always-on lights),
+// filling in through dusk to an evening peak, then thinning after ~23:00 as people go to sleep.
+const LAMP_KF = [[0, 0.14], [3, 0.07], [5, 0.1], [7, 0.11], [10, 0.05], [13, 0.05], [16, 0.08], [18, 0.26], [20, 0.52], [22, 0.6], [23, 0.5], [24, 0.14]]
+// How busy the streets are: full by day, winding down through the evening, quiet from ~23:00 through the
+// small hours, picking back up at dawn. Scales citizen + flock counts so movement dies down at night.
+const ACTIVITY_KF = [[0, 0.25], [5, 0.22], [7, 0.9], [9, 1], [17, 1], [19, 0.85], [21, 0.7], [23, 0.45], [24, 0.25]]
+export const lampFraction = (tod) => kfLerp(LAMP_KF, hourOf(tod))
+export const streetActivity = (tod) => kfLerp(ACTIVITY_KF, hourOf(tod))
+// A window is lit when its fixed "personality" (base) falls under the hour's lit fraction — so a window
+// that comes on at dusk stays on into the evening, then goes dark as the fraction falls (steady, not
+// random). A slow 5-minute wobble flips the odd window on/off. Depends on the CLOCK, never the tick.
+const litWindow = (gx, gy, f, tod) => {
+  const base = srnd(gx * 7 + gy * 13 + f * 17, 2)
+  const slot = Math.floor(hourOf(tod) * 12) // 5-minute slots (12/hour) — the occasional, slow flip
+  const jitter = (srnd(gx * 131 + gy * 57 + f * 19, slot) - 0.5) * 0.1
+  return base < lampFraction(tod) + jitter
+}
 
 function shade(hex, amt) {
   const n = parseInt(hex.slice(1), 16)
@@ -69,7 +95,7 @@ function vgrad(ctx, x0, y0, x1, y1, c0, c1) {
 export const LOGICAL_W = 960
 export const LOGICAL_H = 640
 
-export function drawCity(ctx, scene, theme, tick = 0) {
+export function drawCity(ctx, scene, theme, tick = 0, tod = 0.5) {
   const p = theme && typeof theme === 'object' ? theme : resolveTheme(theme)
   const W = LOGICAL_W
   const H = LOGICAL_H
@@ -109,6 +135,7 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   const gcy = oy + span * (TILE_H / 2)
   const ghw = span * (TILE_W / 2) + TILE_W
   const ghh = span * (TILE_H / 2) + TILE_H
+  drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) // the landscape the city sits in: fields, forest, water, roads out, distant towns
   ctx.fillStyle = shade(p.ground, -48) // plate rim for depth
   diamond(ctx, ox, gcy + 6, ghw, ghh)
   ctx.fill()
@@ -118,7 +145,9 @@ export function drawCity(ctx, scene, theme, tick = 0) {
 
   mark(ctx, 'roads')
   if (scene.infrastructure.roads) {
-    ctx.strokeStyle = rgba(p.road, 0.8)
+    // paved streets tied to the ground palette and kept soft, so the grid reads as avenues between
+    // blocks rather than a hard grey lattice (very visible now the outskirts have open lots).
+    ctx.strokeStyle = rgba(shade(p.ground, -20), 0.5)
     ctx.lineWidth = 2
     const n = Math.max(scene.footprint.cols, scene.footprint.rows)
     for (let g = 0; g <= n; g++) {
@@ -149,7 +178,7 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   // AND its neighbours' shadows — a big depth cue. Flat parks and rubble cast nothing.
   for (const b of order) if (b.height > 0 && !b.collapsed && b.zone !== 'park') drawShadow(ctx, b, ox, oy)
   // Pass 2: the buildings themselves, back-to-front.
-  for (const b of order) drawBuilding(ctx, b, p, ox, oy, tick, stale, scene.infection ?? 0)
+  for (const b of order) drawBuilding(ctx, b, p, ox, oy, tick, stale, scene.infection ?? 0, tod)
 
   mark(ctx, 'landmarks')
   for (const l of scene.landmarks) drawLandmark(ctx, l, p, ox, oy, tick)
@@ -158,8 +187,8 @@ export function drawCity(ctx, scene, theme, tick = 0) {
 
   mark(ctx, 'citizens')
   drawStreetFurniture(ctx, scene, ox, oy) // static trees + lamps lining the avenues (behind the moving life)
-  drawCitizens(ctx, scene, p, ox, oy, tick, stale)
-  drawAnimals(ctx, scene, ox, oy, tick, stale)
+  drawCitizens(ctx, scene, p, ox, oy, tick, stale, tod)
+  drawAnimals(ctx, scene, ox, oy, tick, stale, tod)
   drawVehicles(ctx, scene, ox, oy, tick, stale)
 
   mark(ctx, 'overlay')
@@ -180,7 +209,7 @@ export function drawCity(ctx, scene, theme, tick = 0) {
 // Life signal: pedestrians (small accent dots) and the odd car move along the road grid, animated by
 // tick. Count scales with the footprint, capped for LOD. Deterministic per-citizen via srnd (no state).
 const CAR_COLORS = ['#ffd76a', '#ff6a8a', '#6ad7ff', '#e8ecf2']
-function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
+function drawCitizens(ctx, scene, p, ox, oy, tick, stale, tod = 0.5) {
   if (stale) return // a stale/decaying city empties its streets — and keeps frames still
   const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
   if (n < 1) return
@@ -189,7 +218,8 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
   // A festival gift (market, marathon, World's Fair) thickens the crowd.
   const vit = scene.vitality ?? 1
   const fest = scene.flags && scene.flags.festival ? 1.4 : 1
-  const count = Math.min(240, Math.round((10 + n * 8) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.14) * fest))
+  // Streets thin out at night and refill by day (the clock, not the tick → the thinning is steady).
+  const count = Math.min(240, Math.round((10 + n * 8) * (0.35 + 0.65 * vit) * (1 + (scene.scaleIndex ?? 0) * 0.14) * fest * streetActivity(tod)))
   for (let i = 0; i < count; i++) {
     const onX = srnd(i, 1) < 0.5 // move along the gx axis (true) or the gy axis (false)
     const lane = Math.round(srnd(i, 2) * n) // which road (grid line)
@@ -281,7 +311,7 @@ function drawOvergrowth(ctx, scene, ox, oy) {
 
 // Life above the streets: bird flocks drift the sky (more when lively) and a little wildlife wanders the
 // green ground (more when overgrown). Quiet when the city is stale or during an outbreak.
-function drawAnimals(ctx, scene, ox, oy, tick, stale) {
+function drawAnimals(ctx, scene, ox, oy, tick, stale, tod = 0.5) {
   if (stale || (scene.infection ?? 0) >= 0.5) return
   const n = Math.max(scene.footprint?.cols ?? 0, scene.footprint?.rows ?? 0)
   if (n < 1) return
@@ -289,7 +319,7 @@ function drawAnimals(ctx, scene, ox, oy, tick, stale) {
   const vit = scene.vitality ?? 1
   // An aviary gift fills the sky with more flocks; a zoo/aquarium gift puts wildlife on the ground.
   const aviary = scene.flags && scene.flags.aviary ? 1.8 : 1
-  const flocks = Math.round((2 + vit * 4) * aviary)
+  const flocks = Math.round((2 + vit * 4) * aviary * streetActivity(tod)) // fewer birds aloft at night
   ctx.strokeStyle = 'rgba(40,40,52,0.55)'
   ctx.lineWidth = 1
   for (let i = 0; i < flocks; i++) {
@@ -351,6 +381,93 @@ function drawVehicles(ctx, scene, ox, oy, tick, stale) {
   }
 }
 
+// The landscape the city sits in: a broad field plate beyond the city, with a patchwork of parcels, a
+// river, forest clusters, roads leading out, and a couple of distant towns on the horizon ("the space
+// between cities"). Deterministic (seeded by the city + position) and tick-independent (stale-safe); the
+// GEOMETRY never depends on the palette (grayscale guard), only the fill colours do. No ctx.ellipse.
+function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
+  const seed = (scene.seed >>> 0) || 0
+  const sr = (a, b) => srnd(a + seed, b)
+  const ew = ghw * 1.95, eh = ghh * 1.95
+  const onPlate = (px, py) => Math.abs(px - ox) / ghw + Math.abs(py - gcy) / ghh < 1.04
+
+  // broad surrounding fields
+  ctx.fillStyle = vgrad(ctx, ox, gcy - eh, ox, gcy + eh, shade(p.zone.park, 8), shade(p.zone.park, -28))
+  diamond(ctx, ox, gcy + 5, ew, eh)
+  ctx.fill()
+
+  // farmland parcels — a faint patchwork of lighter/darker green in the surrounding ring
+  for (let i = 0; i < 44; i++) {
+    const a = sr(i, 1), ang = sr(i, 2) * 6.2832, rad = 0.52 + a * 0.46
+    const px = ox + Math.cos(ang) * ew * rad * 0.72
+    const py = gcy + Math.sin(ang) * eh * rad * 0.72
+    if (onPlate(px, py)) continue // clear of the plate
+    ctx.fillStyle = rgba(sr(i, 3) > 0.5 ? shade(p.zone.park, 16) : shade(p.zone.park, -18), 0.5)
+    diamond(ctx, px, py, 15 + a * 13, 8 + a * 6)
+    ctx.fill()
+  }
+
+  // forest clusters
+  for (let i = 0; i < 20; i++) {
+    const a = sr(i, 11), ang = sr(i, 13) * 6.2832, rad = 0.58 + a * 0.42
+    const px = ox + Math.cos(ang) * ew * rad * 0.72
+    const py = gcy + Math.sin(ang) * eh * rad * 0.72
+    if (onPlate(px, py)) continue
+    const trees = 3 + Math.floor(a * 4)
+    for (let t = 0; t < trees; t++) {
+      const tx = px + (sr(i * 9 + t, 17) - 0.5) * 22
+      const ty = py + (sr(i * 9 + t, 19) - 0.5) * 13
+      ctx.fillStyle = 'rgba(42,84,42,0.5)'
+      ctx.fillRect(tx - 1, ty, 2, 2)
+      ctx.fillStyle = 'rgba(52,100,50,0.92)'
+      ctx.beginPath()
+      ctx.moveTo(tx, ty - 8)
+      ctx.lineTo(tx - 3.5, ty)
+      ctx.lineTo(tx + 3.5, ty)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
+
+  // country lanes easing out of the city toward the horizon: each a soft paved strip that tapers with
+  // distance (perspective) and fades into the fields, rather than a hard grey line. Ground-palette tinted.
+  for (const [dx, dy] of [[-1, -0.35], [1, -0.22], [0.35, 1]]) {
+    const nx = ox + dx * ghw * 0.55, ny = gcy + dy * ghh * 0.55 // near the city edge
+    const fx = ox + dx * ew * 0.98, fy = gcy + dy * eh * 0.98 // out at the horizon
+    const len = Math.hypot(fx - nx, fy - ny) || 1
+    const pxp = -(fy - ny) / len, pyp = (fx - nx) / len // unit perpendicular
+    const wN = 6, wF = 1 // wide near, narrow far
+    const lane = vgrad(ctx, nx, ny, fx, fy, rgba(shade(p.ground, -26), 0.7), rgba(shade(p.ground, -8), 0))
+    ctx.fillStyle = lane
+    ctx.beginPath()
+    ctx.moveTo(nx + pxp * wN, ny + pyp * wN)
+    ctx.lineTo(fx + pxp * wF, fy + pyp * wF)
+    ctx.lineTo(fx - pxp * wF, fy - pyp * wF)
+    ctx.lineTo(nx - pxp * wN, ny - pyp * wN)
+    ctx.closePath()
+    ctx.fill()
+    ctx.strokeStyle = rgba(shade(p.ground, 22), 0.16) // a faint sunlit centre crown
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(nx, ny)
+    ctx.lineTo(fx, fy)
+    ctx.stroke()
+  }
+
+  // distant towns — tiny clusters on the horizon
+  for (let s = 0; s < 3; s++) {
+    const ang = (0.18 + s * 0.3) * Math.PI
+    const px = ox + Math.cos(ang) * ew * 0.9
+    const py = gcy - eh * (0.46 + sr(s, 29) * 0.28)
+    for (let k = 0; k < 5; k++) {
+      const bx = px + (sr(s * 5 + k, 31) - 0.5) * 26
+      const bh = 3 + Math.floor(sr(s * 5 + k, 37) * 6)
+      ctx.fillStyle = rgba(shade(p.roof, -8), 0.55)
+      ctx.fillRect(bx, py - bh, 3, bh)
+    }
+  }
+}
+
 // Cast shadow for a building: the sun is upper-left, so the shadow is the base footprint swept down-right,
 // longer for taller buildings. Geometry depends on height + position only (grayscale/stale-safe).
 function drawShadow(ctx, b, ox, oy) {
@@ -373,11 +490,24 @@ function drawShadow(ctx, b, ox, oy) {
 // Per-building seeded style (stable across ticks + palettes): 0 flat/parapet, 1 pitched, 2 stepped setback.
 const roofStyle = (b) => (b.height >= 2 ? Math.floor(srnd(b.gx * 3 + 1, b.gy * 3 + 7) * 3) : 0)
 
-function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
+function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0, tod = 0.5) {
   const { x, y } = iso(b.gx, b.gy, ox, oy)
   const hw = TILE_W / 2
   const hh = TILE_H / 2
   const h = b.height * FLOOR_H
+
+  // An undeveloped lot on the outskirts: bare ground with a little gravel/weeds — not a building.
+  if (b.vacant) {
+    ctx.fillStyle = vgrad(ctx, x, y - hh, x, y + hh, shade(p.ground, -4), shade(p.ground, -24))
+    diamond(ctx, x, y, hw, hh)
+    ctx.fill()
+    if (srnd(b.gx + 3, b.gy + 5) > 0.5) {
+      ctx.fillStyle = rgba('#6a7a46', 0.45)
+      ctx.fillRect(x - 3, y - 1, 2, 2)
+      ctx.fillRect(x + 2, y + 1, 2, 2)
+    }
+    return
+  }
 
   if (b.zone === 'park') {
     ctx.fillStyle = vgrad(ctx, x, y - hh, x, y + hh, shade(p.zone.park, 20), shade(p.zone.park, -14))
@@ -501,7 +631,7 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
           ctx.fillRect(lx, wy, 2, 3)
           ctx.fillStyle = rgba(shade(base, -84), 0.85)
           ctx.fillRect(rx, wy, 2, 3)
-          if (lightsOn && lit(b.gx + c, b.gy, f, tick)) {
+          if (lightsOn && litWindow(b.gx + c, b.gy, f, tod)) {
             ctx.fillStyle = p.window
             ctx.fillRect(lx, wy, 2, 3)
             ctx.fillStyle = rgba(p.window, 0.3)
@@ -543,7 +673,7 @@ export function pyromidAnchor(scene, W, H) {
   const ox = W / 2
   const oy = H * 0.3
   const n = Math.max(scene?.footprint?.cols ?? 1, scene?.footprint?.rows ?? 1)
-  const { x, y } = iso(n * 0.5, n * 0.66, ox, oy)
+  const { x, y } = iso(n * 1.3, n * 0.8, ox, oy) // OUTSIDE the city — a megaproject in the countryside, front-right
   return { x, y, bw: 46, fullH: 150 }
 }
 
@@ -563,12 +693,15 @@ export function pyromidHitsAt(scene, W, H, view, sx, sy, progress) {
 }
 
 // The solar-pyramid datacenter. Builds from a foundation up to the full pyramid as `progress` climbs,
-// with a faint scaffold of what it will become; the apex capstone blazes gold on completion. Geometry
-// depends on progress + footprint ONLY (never the tick), so grayscale/stale-frame guards hold — only the
-// capstone's COLOUR blinks. Uses arc/fillRect/moveTo/lineTo/stroke (no ctx.ellipse — the test stub lacks it).
+// with a faint scaffold of what it will become; the apex capstone blazes gold on completion. Static
+// geometry depends on progress + footprint only; the sole tick-driven detail is the construction crane's
+// hook, which bobs ONLY when the city is lively and hangs still when stale — so a stale mid-build city
+// still holds still across ticks (the stale-frame guard) and the bob is position-only (grayscale-safe).
+// The capstone's COLOUR blinks on completion. Uses arc/fillRect/moveTo/lineTo/stroke (no ctx.ellipse).
 function drawPyromid(ctx, scene, tick) {
   const py = scene.pyromid
   if (!py) return
+  const stale = (scene.vitality ?? 0) < 0.34 // a stalled city's crane freezes — no tick-driven drift
   const prog = Math.max(0, Math.min(1, py.progress ?? 0))
   const W = LOGICAL_W
   const H = LOGICAL_H
@@ -577,6 +710,16 @@ function drawPyromid(ctx, scene, tick) {
   const h = a.fullH * (0.1 + 0.9 * prog) // a foundation that rises to the full height at completion
   const apex = y - h
   const base = y + bw * 0.5
+  const building = prog < 0.995 // the site is under construction until it tops out
+  // a cleared/graded dirt lot the megaproject sits on (recedes as it finishes)
+  if (building) {
+    ctx.fillStyle = rgba('#5a4a36', 0.6)
+    diamond(ctx, x, base - bw * 0.35, bw * 1.5, bw * 0.72)
+    ctx.fill()
+    ctx.fillStyle = rgba('#6b5a42', 0.5) // graded tracks
+    diamond(ctx, x, base - bw * 0.35, bw * 1.1, bw * 0.5)
+    ctx.fill()
+  }
   // faint full-height scaffold — what it is becoming
   ctx.strokeStyle = rgba('#8fb0ff', 0.18)
   ctx.lineWidth = 1
@@ -634,6 +777,53 @@ function drawPyromid(ctx, scene, tick) {
     ctx.beginPath()
     ctx.arc(x, apex, 12, 0, 7)
     ctx.fill()
+  }
+
+  // --- construction site: scaffold rungs on the rising faces, flanking tower cranes, trucks on the lot ---
+  if (building) {
+    ctx.strokeStyle = rgba('#caa36a', 0.55)
+    ctx.lineWidth = 1
+    for (let r = 1; r < 7; r++) {
+      const f = r / 7, ly = y - h * f, lw = bw * (1 - f)
+      ctx.beginPath()
+      ctx.moveTo(x - lw, ly)
+      ctx.lineTo(x + lw, ly)
+      ctx.stroke()
+    }
+    for (const cs of [-1, 1]) {
+      const cxp = x + cs * (bw + 26)
+      const ctop = apex - 34
+      ctx.strokeStyle = 'rgba(224,176,80,0.92)'
+      ctx.lineWidth = 2
+      ctx.beginPath() // mast
+      ctx.moveTo(cxp, base - 2)
+      ctx.lineTo(cxp, ctop)
+      ctx.stroke()
+      ctx.beginPath() // jib reaching over the pyramid + a short counter-jib
+      ctx.moveTo(x + cs * 4, ctop)
+      ctx.lineTo(cxp + cs * 16, ctop)
+      ctx.stroke()
+      ctx.strokeStyle = 'rgba(224,176,80,0.5)' // the hook line slowly bobs while work is live; still when stale
+      ctx.lineWidth = 1
+      const hx = x + cs * (bw * 0.5)
+      const hl = 24 + (stale ? 0 : Math.sin((tick + cs * 5) * 0.06) * 7)
+      ctx.beginPath()
+      ctx.moveTo(hx, ctop)
+      ctx.lineTo(hx, ctop + hl)
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(40,40,40,0.8)'
+      ctx.fillRect(hx - 1, ctop + hl, 3, 2) // the load
+    }
+    for (const ts of [-0.7, 0.55]) {
+      const tx = x + ts * bw * 1.4, ty = base + 3
+      ctx.fillStyle = '#c9c2b4'
+      ctx.fillRect(tx - 5, ty - 4, 10, 4) // trailer
+      ctx.fillStyle = '#9aa0ac'
+      ctx.fillRect(tx + 3, ty - 6, 4, 4) // cab
+      ctx.fillStyle = '#222'
+      ctx.fillRect(tx - 4, ty, 2, 1)
+      ctx.fillRect(tx + 4, ty, 2, 1) // wheels
+    }
   }
 }
 

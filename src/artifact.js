@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sceneFor } from './render/scene.js'
+import { getCachedGeoWeather } from './geoweather.js' // keeper-side location + real weather, baked into the artifact
 import { economyFor, treasuryFor } from './sim/economy.js'
 import { scaleName } from './sim/scale.js'
 import { effectiveBuilt } from './sim/condition.js'
@@ -39,7 +40,7 @@ const fmt = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
 // The pure data model embedded in the artifact AND served by the live /state endpoint — ONE source of
 // truth, so the polling page re-renders in place with exactly what a full render would show.
-export function cityData(state, config = DEFAULT_CONFIG) {
+export function cityData(state, config = DEFAULT_CONFIG, env = getCachedGeoWeather()) {
   const sim = state.sim
   // Districts split by burn source: Claude Code ("tech") vs cornercase agents ("ops/industry").
   const claude = state.claude?.cumulativeTokens ?? 0
@@ -61,6 +62,9 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   const eco = economyFor(effectiveBuilt(sim), sim.vitality * (1 - INFECTION.economyDrop * infection))
   let readout = {
     cityName: config.cityName,
+    locationCity: env && env.city ? env.city : null, // the real nearby city ("Tokenopolis near <city>"), or null offline
+    weather: env && env.weather ? env.weather : null, // real current weather label, or null → fall back to weatherOf()
+    tempC: env && Number.isFinite(env.tempC) ? env.tempC : null,
     theme: effectiveTheme,
     population: eco.population + boost.popBonus, // the datacenter's staff swell the city
     treasury: eco.treasury + pyromid.bonus, // + what the Pyromid has been fed by clicking
@@ -127,10 +131,11 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   }
 }
 
-export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
-  const data = cityData(state, config)
+export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCachedGeoWeather()) {
+  const data = cityData(state, config, env)
   const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift, era, climax, pyromid } = data
   const pyroPct = Math.round((pyromid?.progress ?? 0) * 100)
+  const near = readout.locationCity ? ` near ${esc(readout.locationCity)}` : '' // "Tokenopolis near <city>" when the viewer's city is known
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -139,7 +144,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(readout.cityName)} — Tokenopolis</title>
+<title>${esc(readout.cityName)}${near} — Tokenopolis</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -285,7 +290,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   </div>
 </div>
 <aside id="hud">
-  <h1>${flag ? esc(flag) + ' ' : ''}${esc(readout.cityName)}</h1>
+  <h1 id="cityname">${flag ? esc(flag) + ' ' : ''}${esc(readout.cityName)}${near}</h1>
   <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
   <div class="daygift" id="daygift">🎁 Day ${day} · ${giftCount}/${giftTotal} gifts${lastGift ? ' · <span class="gname">' + esc(lastGift.name) + '</span>' : ''}</div>
   <div class="clockline" id="clockline">—</div>
@@ -345,15 +350,16 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   var LW = 960, LH = 640; // logical render space; the canvas backing may be larger (hi-res) — S bridges them
   function frame() {
     var k = tick++;
+    var localMs = Date.now() - new Date().getTimezoneOffset() * 60000; // the viewer's local clock
+    var tod = typeof timeOfDay === 'function' ? timeOfDay(localMs) : 0.5;
     var S = (canvas.width || LW) / LW; // backing-resolution factor: logical 960 → the hi-res canvas, through the zoom
     if (ctx.setTransform) ctx.setTransform(S * view.z, 0, 0, S * view.z, S * view.x, S * view.y);
-    drawCity(ctx, DATA.scene, DATA.theme, k);
+    drawCity(ctx, DATA.scene, DATA.theme, k, tod); // window lights + street activity follow the same clock as the sky
     if (ctx.setTransform) ctx.setTransform(1, 0, 0, 1, 0, 0);
     // Living city: the sky + weather track the viewer's LOCAL clock (screen-space overlays).
     if (typeof drawDayNight === 'function') {
-      var localMs = Date.now() - new Date().getTimezoneOffset() * 60000;
-      drawDayNight(ctx, canvas.width, canvas.height, timeOfDay(localMs));
-      drawWeather(ctx, canvas.width, canvas.height, (typeof weatherOf === 'function' ? weatherOf(localMs) : 'clear'), k);
+      drawDayNight(ctx, canvas.width, canvas.height, tod);
+      drawWeather(ctx, canvas.width, canvas.height, ((DATA.readout && DATA.readout.weather) || (typeof weatherOf === 'function' ? weatherOf(localMs) : 'clear')), k);
     }
     if (typeof drawInfection === 'function') drawInfection(ctx, canvas.width, canvas.height, (DATA.scene && DATA.scene.infection) || 0);
   }
@@ -373,11 +379,14 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     var now = Date.now();
     var localMs = now - new Date().getTimezoneOffset() * 60000;
     var time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    var w = typeof weatherOf === 'function' ? weatherOf(localMs) : 'clear';
+    // real current weather (baked from the viewer's location); falls back to the deterministic weatherOf()
+    var rd = DATA.readout || {};
+    var w = rd.weather || (typeof weatherOf === 'function' ? weatherOf(localMs) : 'clear');
+    var temp = typeof rd.tempC === 'number' ? ' · ' + rd.tempC + '°C' : '';
     var tod = typeof timeOfDay === 'function' ? timeOfDay(localMs) : 0.5;
     var elev = Math.sin(((((tod % 1) + 1) % 1) - 0.25) * Math.PI * 2);
     var sky = elev < -0.05 ? '🌙' : elev < 0.18 ? '🌅' : '☀️';
-    el.textContent = sky + ' ' + time + ' · ' + (WICON[w] || '☀️') + ' ' + (WLABEL[w] || 'Clear');
+    el.textContent = sky + ' ' + time + ' · ' + (WICON[w] || '☀️') + ' ' + (WLABEL[w] || 'Clear') + temp;
   }
   // ---- "A Random Act": name the latest occurrence, animate it when THIS render is fresh. ----
   var FRESH_MS = 180000, FX_DUR = 4200;
@@ -800,8 +809,22 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   function grp(n) { return String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); } // \\ — inside a template literal
   function applyLive(s) {
     if (!s || !s.readout) return;
+    // The keeper's location/weather cache is empty for the first few seconds of every (re)start, so /state
+    // can answer with locationCity/weather/tempC = null during that window. Carry the last-known real values
+    // forward instead of letting the wholesale readout swap flicker the HUD back to the deterministic sky.
+    var prev = DATA.readout || {};
+    if (s.readout.locationCity == null && prev.locationCity != null) s.readout.locationCity = prev.locationCity;
+    if (s.readout.weather == null && prev.weather != null) { s.readout.weather = prev.weather; s.readout.tempC = prev.tempC; }
     DATA.scene = s.scene; DATA.readout = s.readout; // the rAF loop redraws DATA.scene automatically
     if (typeof s.lastActAt !== 'undefined') DATA.lastActAt = s.lastActAt;
+    // Keep the headline + tab title in sync with the resolved city — the "near <city>" suffix is otherwise
+    // baked only at build time, so a tab opened before geolocation resolved would never gain it.
+    var h1 = document.getElementById('cityname');
+    if (h1 && s.readout.cityName) {
+      var near = s.readout.locationCity ? ' near ' + s.readout.locationCity : '';
+      h1.textContent = (s.flag ? s.flag + ' ' : '') + s.readout.cityName + near; // textContent → the API city name can't inject markup
+      try { document.title = s.readout.cityName + near + ' — Tokenopolis'; } catch (e) { /* ignore */ }
+    }
     setTxt('pop', grp(s.readout.population));
     setTxt('treasury', '§' + grp(s.readout.treasury));
     setTxt('economy', grp(s.readout.economyRating));

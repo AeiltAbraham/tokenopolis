@@ -9,6 +9,7 @@ import { readStats as realReadStats } from '../src/stats.js'
 import { loadState, saveState, initState, logLine } from '../src/state.js'
 import { writeArtifact, cityData } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
+import { refreshGeoWeather } from '../src/geoweather.js'
 import { tick } from '../src/tick.js'
 import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/claude-stats.js'
 import { startCityServer } from '../src/server.js'
@@ -81,6 +82,28 @@ export function startService({
   run()
   const interval = setInterval(run, tickMs) // also the poll fallback if fs.watch is unavailable
 
+  // Location + current weather for the "near <city>" label and the real sky — fetched off the network,
+  // failure-tolerant, and NEVER blocking the keeper. Resolve once on boot (then rebuild so the city name
+  // lands in the baked HTML), refresh every 15 min. `tick`'s rebuild and /state both read the cached result
+  // through cityData(), so the page shows it with no further plumbing.
+  const refreshEnv = () => {
+    refreshGeoWeather()
+      .then((env) => {
+        if (!env) return // nothing resolved (offline) — the baked fallback already reads correctly
+        // Force a re-render: tick() skips writeArtifact when the SIM is unchanged, and resolving the city/
+        // weather doesn't touch the sim, so rebuild city.html directly to bake in the new "near <city>".
+        try {
+          const s = loadState(dir, nowIso)
+          if (s) writeArtifact(s, config, dir)
+        } catch (e) {
+          logLine(dir, `geoweather rebuild error: ${e && e.message}`, nowIso)
+        }
+      })
+      .catch((e) => logLine(dir, `geoweather error: ${e && e.message}`, nowIso))
+  }
+  refreshEnv()
+  const envInterval = setInterval(refreshEnv, 15 * 60_000)
+
   let watcher
   try {
     watcher = watch(dir, (_event, file) => {
@@ -133,6 +156,7 @@ export function startService({
     run,
     stop() {
       clearInterval(interval)
+      clearInterval(envInterval)
       try {
         watcher && watcher.close()
       } catch {

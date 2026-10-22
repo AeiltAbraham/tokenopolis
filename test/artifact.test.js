@@ -35,6 +35,27 @@ test('embedded city-data JSON round-trips and matches the computed readout', () 
   assert.equal(data.theme, 'temperate')
 })
 
+test('location: a known city renders "<name> near <city>" in the HUD + title and bakes real weather', () => {
+  const env = { city: 'Haarlem', weather: 'rain', tempC: 9 }
+  const html = buildArtifactHtml(makeState(), { cityName: 'Tokenopolis', theme: 'coastal' }, env)
+  assert.match(html, /<h1 id="cityname">Tokenopolis near Haarlem<\/h1>/, 'h1 (with the live-update id) shows "Tokenopolis near Haarlem"')
+  assert.match(html, /<title>Tokenopolis near Haarlem /, 'title carries the nearby city')
+  const data = JSON.parse(html.match(/<script id="city-data"[^>]*>([\s\S]*?)<\/script>/)[1])
+  assert.equal(data.readout.locationCity, 'Haarlem')
+  assert.equal(data.readout.weather, 'rain')
+  assert.equal(data.readout.tempC, 9)
+  assert.doesNotMatch(html, /https?:\/\//i, 'the external city name must not drag in any URL (stays self-contained)')
+})
+
+test('location: offline (no env) falls back to a plain name + null weather, no "near", still self-contained', () => {
+  const html = buildArtifactHtml(makeState(), { cityName: 'Tokenopolis', theme: 'coastal' }, null)
+  assert.match(html, /<h1 id="cityname">Tokenopolis<\/h1>/, 'no " near <city>" when location is unknown')
+  const data = JSON.parse(html.match(/<script id="city-data"[^>]*>([\s\S]*?)<\/script>/)[1])
+  assert.equal(data.readout.locationCity, null)
+  assert.equal(data.readout.weather, null, 'client falls back to the deterministic weatherOf()')
+  assert.equal(data.readout.tempC, null)
+})
+
 test('HUD shows the economy readout, lifetime panel, name and theme', () => {
   const html = buildArtifactHtml(makeState(), { cityName: 'Burgville', theme: 'coastal' })
   for (const label of ['Population', 'Treasury', 'Economy', 'Vitality', 'Peak', 'Decay clock']) {
