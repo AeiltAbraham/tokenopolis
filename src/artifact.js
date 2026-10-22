@@ -231,8 +231,9 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   }
   #gift-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #gift-banner .gico { margin-right: 5px; }
-  #hud .daygift { margin: -8px 0 14px; font-size: 12px; opacity: .72; }
+  #hud .daygift { margin: -8px 0 6px; font-size: 12px; opacity: .72; }
   #hud .daygift .gname { color: #d7b8ff; }
+  #hud .clockline { margin: 0 0 14px; font-size: 12px; opacity: .7; font-variant-numeric: tabular-nums; }
   .panel { margin-top: 16px; }
   .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; opacity: .7; margin: 0 0 7px; font-weight: 700; }
   .panel .muted { opacity: .5; font-weight: 400; text-transform: none; letter-spacing: 0; }
@@ -287,6 +288,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   <h1>${flag ? esc(flag) + ' ' : ''}${esc(readout.cityName)}</h1>
   <div class="scale"><span id="scaleName">${esc(readout.scaleName)}</span> · <span class="cond" id="cond">${esc(readout.condition)}</span></div>
   <div class="daygift" id="daygift">🎁 Day ${day} · ${giftCount}/${giftTotal} gifts${lastGift ? ' · <span class="gname">' + esc(lastGift.name) + '</span>' : ''}</div>
+  <div class="clockline" id="clockline">—</div>
   <div id="infected" class="infected"${infection > 0 ? '' : ' hidden'}>☣ Outbreak — ${Math.round(infection * 100)}% · burn to clear</div>
   <div id="era" class="${esc(era)}"${era === 'build' ? ' hidden' : ''}>${era === 'ascendant' ? '⚡ Ascended — the Singularity' : era === 'fallout' ? `☢️ Fallout — recovery ${Math.round((readout.recovery ?? 0) * 100)}% · the land needs rest` : ''}</div>
   <div id="recovery-wrap"${era === 'fallout' ? '' : ' hidden'}><div id="recovery-fill" style="width:${Math.round((readout.recovery ?? 0) * 100)}%"></div></div>
@@ -347,11 +349,11 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     if (ctx.setTransform) ctx.setTransform(S * view.z, 0, 0, S * view.z, S * view.x, S * view.y);
     drawCity(ctx, DATA.scene, DATA.theme, k);
     if (ctx.setTransform) ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // Living city: day/night tint + seasonal weather, keyed off the viewer's clock (screen-space overlays).
+    // Living city: the sky + weather track the viewer's LOCAL clock (screen-space overlays).
     if (typeof drawDayNight === 'function') {
-      var now = Date.now();
-      drawDayNight(ctx, canvas.width, canvas.height, timeOfDay(now));
-      drawWeather(ctx, canvas.width, canvas.height, seasonOf(now), k);
+      var localMs = Date.now() - new Date().getTimezoneOffset() * 60000;
+      drawDayNight(ctx, canvas.width, canvas.height, timeOfDay(localMs));
+      drawWeather(ctx, canvas.width, canvas.height, (typeof weatherOf === 'function' ? weatherOf(localMs) : 'clear'), k);
     }
     if (typeof drawInfection === 'function') drawInfection(ctx, canvas.width, canvas.height, (DATA.scene && DATA.scene.infection) || 0);
   }
@@ -361,6 +363,21 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     var last = Date.parse(DATA.readout.lastMeaningfulBurnAt);
     var days = isNaN(last) ? 0 : Math.max(0, (Date.now() - last) / 86400000);
     decayEl.textContent = days < 1 ? 'active' : days.toFixed(1) + ' days idle';
+  }
+  // Local time + today's weather (both drive the sky; shown here so the viewer can read them).
+  var WLABEL = { clear: 'Clear', overcast: 'Overcast', rain: 'Rain', fog: 'Fog', snow: 'Snow' };
+  var WICON = { clear: '☀️', overcast: '☁️', rain: '🌧️', fog: '🌫️', snow: '❄️' };
+  function updateClock() {
+    var el = document.getElementById('clockline');
+    if (!el) return;
+    var now = Date.now();
+    var localMs = now - new Date().getTimezoneOffset() * 60000;
+    var time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    var w = typeof weatherOf === 'function' ? weatherOf(localMs) : 'clear';
+    var tod = typeof timeOfDay === 'function' ? timeOfDay(localMs) : 0.5;
+    var elev = Math.sin(((((tod % 1) + 1) % 1) - 0.25) * Math.PI * 2);
+    var sky = elev < -0.05 ? '🌙' : elev < 0.18 ? '🌅' : '☀️';
+    el.textContent = sky + ' ' + time + ' · ' + (WICON[w] || '☀️') + ' ' + (WLABEL[w] || 'Clear');
   }
   // ---- "A Random Act": name the latest occurrence, animate it when THIS render is fresh. ----
   var FRESH_MS = 180000, FX_DUR = 4200;
@@ -815,16 +832,17 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
 
   frame();
   updateDecay();
+  updateClock();
   setupActs();
   setupGift();
   setupClimax();
   renderPyro(DATA.pyromid);
   updateActBtn();
   pollLive(); // probe connection immediately so a static/stale copy shows the badge at once
-  if (typeof setInterval === 'function') { setInterval(updateActBtn, 1000); setInterval(pollLive, 4000); }
+  if (typeof setInterval === 'function') { setInterval(updateActBtn, 1000); setInterval(pollLive, 4000); setInterval(updateClock, 15000); }
   if (typeof requestAnimationFrame === 'function') {
     var lastT = 0;
-    (function loop(t) { if (t - lastT > 140) { frame(); updateDecay(); lastT = t; } requestAnimationFrame(loop); })(0);
+    (function loop(t) { if (t - lastT > 185) { frame(); updateDecay(); lastT = t; } requestAnimationFrame(loop); })(0);
   }
 })();
 </script>

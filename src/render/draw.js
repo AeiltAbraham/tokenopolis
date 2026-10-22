@@ -163,19 +163,6 @@ export function drawCity(ctx, scene, theme, tick = 0) {
   drawVehicles(ctx, scene, ox, oy, tick, stale)
 
   mark(ctx, 'overlay')
-  if (!stale && !scene.ruined) {
-    const cx = ox - 30 + ((tick * 4) % 24)
-    const cy = oy - 6
-    ctx.strokeStyle = p.accent
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(cx, cy)
-    ctx.lineTo(cx, cy - 38) // mast
-    ctx.lineTo(cx + 26, cy - 38) // jib
-    ctx.lineTo(cx + 26, cy - 31) // hook
-    ctx.stroke()
-    ctx.lineWidth = 1
-  }
   // --- post-process: a warm key-light wash from the sun side, then a vignette for depth/mood ---
   const sun = ctx.createRadialGradient(ox - W * 0.22, oy - H * 0.05, 10, ox - W * 0.22, oy - H * 0.05, W * 0.72)
   sun.addColorStop(0, night ? 'rgba(150,170,255,0.06)' : 'rgba(255,238,200,0.13)')
@@ -208,7 +195,7 @@ function drawCitizens(ctx, scene, p, ox, oy, tick, stale) {
     const lane = Math.round(srnd(i, 2) * n) // which road (grid line)
     const car = srnd(i, 3) > 0.74
     const dir = srnd(i, 5) > 0.5 ? 1 : -1
-    const speed = car ? 0.02 : 0.009
+    const speed = car ? 0.008 : 0.004
     const f = (((srnd(i, 6) + dir * tick * speed) % 1) + 1) % 1
     const pos = onX ? iso(f * n, lane, ox, oy) : iso(lane, f * n, ox, oy)
     if (car) {
@@ -308,7 +295,7 @@ function drawAnimals(ctx, scene, ox, oy, tick, stale) {
   for (let i = 0; i < flocks; i++) {
     const r = srnd(i, 51), r2 = srnd(i, 57)
     const baseY = 16 + r * 70
-    const cx = (((srnd(i, 53) * (W + 80)) + tick * (0.25 + r2 * 0.5)) % (W + 80)) - 40
+    const cx = (((srnd(i, 53) * (W + 80)) + tick * (0.1 + r2 * 0.2)) % (W + 80)) - 40
     const birds = 3 + Math.floor(r2 * 3)
     for (let b = 0; b < birds; b++) {
       const bx = cx + b * 7 - birds * 3
@@ -339,7 +326,7 @@ function drawVehicles(ctx, scene, ox, oy, tick, stale) {
   if (serv.airport) {
     for (let i = 0; i < 2; i++) {
       const y = 28 + i * 22
-      const x = (((i * 420) + tick * (1.2 + i * 0.3)) % (W + 120)) - 60
+      const x = (((i * 420) + tick * (0.45 + i * 0.12)) % (W + 120)) - 60
       ctx.fillStyle = 'rgba(222,228,238,0.9)'
       ctx.fillRect(x, y, 10, 2)
       ctx.fillRect(x + 3, y - 2, 3, 2)
@@ -350,7 +337,7 @@ function drawVehicles(ctx, scene, ox, oy, tick, stale) {
   if (serv.harbour) {
     for (let i = 0; i < 5; i++) {
       const r = srnd(i, 71)
-      const bx = 40 + ((srnd(i, 73) * (W - 80) + tick * (0.2 + r * 0.3)) % (W - 80))
+      const bx = 40 + ((srnd(i, 73) * (W - 80) + tick * (0.08 + r * 0.12)) % (W - 80))
       const by = H - 38 - r * 46
       ctx.fillStyle = 'rgba(180,200,224,0.12)' // shimmering reflection on the water
       ctx.fillRect(bx + 1, by + 3, 6, 5 + Math.round(r * 4))

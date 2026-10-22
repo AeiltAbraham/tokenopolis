@@ -252,3 +252,25 @@ stale/z-order/determinism-safe, no ctx.ellipse.
 Suite 184/184 (guards intact — the logical-space change is transparent at the 960 test resolution). Verified
 in-browser: crisp at 235% zoom with clear cast shadows, varied rooftops, trees/lamps, boats; the Pyromid click
 burns at BOTH fit (§…500→510) and 235% zoom (→520); no console errors. Version → 1.3.0.
+
+## 2026-10-22 — Calmer motion + a living sky & weather (v1.4.0)
+
+Addressing live feedback. (1) Removed the constant roving "hook"/crane from the overlay layer (it belongs
+at a build site, not floating downtown), and slowed all motion to a calmer, real-life pace — citizens/cars
+(speed ~halved), birds, boats, planes drift slower, and the frame cadence eased 140→185ms. The draw guards
+(lively-frames-differ, lit-window twinkle, stale-frames-still, grayscale, z-order) all still hold.
+
+(2) A living SKY + WEATHER driven by the viewer's LOCAL clock (local-ms = Date.now() − tz offset).
+`ambient.js drawDayNight` now arcs the SUN across the daytime sky (low at dawn/dusk, high at noon, warmer
+near the horizon) and the MOON across the night (with a crescent shadow + halo), over a deeper night wash +
+warmer sunset glow (stars still come from the backdrop). New `weatherOf(ms)` gives each day a stable, varied
+weather (clear / overcast / rain / fog, snow on winter days); `drawWeather` now renders rain (diagonal
+streaks + overcast darkening), fog (drifting haze bands), overcast (grey wash + more clouds), plus the
+existing snow/leaves/clouds — all screen-space, deterministic, no ctx.ellipse. The boot feeds local time to
+both, and a HUD line shows the local time + a day/night + weather glyph ("🌙 21:14 · 🌧️ Rain"), updated live.
+
+Signatures preserved (drawDayNight(ctx,w,h,tod) / drawWeather(ctx,w,h,label,tick)) so the ambient tests pass;
+added a weatherOf guard + extended the drawWeather test to the new labels. Suite 190/190. Verified via a
+sky-preview grid: sun arcs dawn→noon→sunset, night shows the moon + stars, and rain/fog/overcast/snow all
+render. Version → 1.4.0. STILL TO DO (next): the Pyromid as a growing construction site OUTSIDE the city
+(cranes, trucks, scaffolding), and a more realistic world (dense centre → outskirts → countryside between cities).

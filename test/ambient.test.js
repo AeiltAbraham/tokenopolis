@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { timeOfDay, seasonOf, drawDayNight, drawWeather } from '../src/render/ambient.js'
+import { timeOfDay, seasonOf, drawDayNight, drawWeather, weatherOf } from '../src/render/ambient.js'
 
 // A recording ctx stub modeled on test/artifact.test.js: every method is a no-op that counts as a
 // draw; createLinearGradient returns a stub gradient; `canvas` reports a size.
@@ -67,11 +67,22 @@ test('drawDayNight: does not throw and paints a full-canvas overlay at every pha
   }
 })
 
-test('drawWeather: each season (and an unknown one) draws without throwing and paints something', () => {
-  for (const season of ['winter', 'autumn', 'spring', 'summer', 'mystery']) {
+test('drawWeather: each season/weather (and an unknown one) draws without throwing and paints something', () => {
+  for (const w of ['winter', 'autumn', 'spring', 'summer', 'mystery', 'rain', 'fog', 'overcast', 'clear', 'snow']) {
     const { ctx, calls } = makeCtx()
-    assert.doesNotThrow(() => drawWeather(ctx, 960, 640, season, 42))
-    assert.ok(calls.paints > 0, `season=${season} should issue at least one paint`)
+    assert.doesNotThrow(() => drawWeather(ctx, 960, 640, w, 42))
+    assert.ok(calls.paints > 0, `weather=${w} should issue at least one paint`)
+  }
+})
+
+test('weatherOf: returns a known label, deterministic and stable within a day', () => {
+  const labels = new Set(['clear', 'overcast', 'rain', 'fog', 'snow'])
+  for (const iso of ['2026-07-01T12:00:00.000Z', '2026-01-10T08:00:00.000Z', '2026-10-22T20:00:00.000Z', '2026-03-15T06:00:00.000Z']) {
+    const ms = Date.parse(iso)
+    const w = weatherOf(ms)
+    assert.ok(labels.has(w), `${iso} → ${w} must be a known label`)
+    assert.equal(weatherOf(ms), w, 'deterministic')
+    assert.equal(weatherOf(ms + 3600000), w, 'same day (+1h) → same weather') // these hours do not cross UTC midnight
   }
 })
 
