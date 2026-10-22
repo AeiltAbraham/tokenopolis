@@ -11,6 +11,8 @@ import { writeArtifact } from './artifact.js'
 import { readClaudeDelta } from './claude-stats.js'
 import { updateProgress, newlyEarned } from './progress.js'
 import { dayOf, claimGiftsUpTo, defaultGifts } from './gifts.js'
+import { updatePyromid, newlyUnlocked, defaultPyromid } from './pyromid.js'
+import { treasuryFor } from './sim/economy.js'
 import { appendEvent } from './history.js'
 import { notifyAchievements } from './notify.js'
 
@@ -58,6 +60,11 @@ export function advance(prev, stats, now, claudeDelta = 0) {
     for (const g of claim.claimed) history = appendEvent(history, { at: now, type: 'gift', label: `Day ${g.day}: ${g.name}` })
     if (claim.claimed.length) gifts = { ...gifts, last: { ...gifts.last, at: now } }
   }
+  // The Pyromid: build it from the current treasury (which already includes its click bonus), high-water,
+  // and chronicle each new line of lore it reveals as it rises.
+  const prevPyro = prev.pyromid ?? defaultPyromid()
+  const pyromid = updatePyromid(prevPyro, treasuryFor(newSim, prevPyro.bonus))
+  for (const line of newlyUnlocked(prevPyro.infoLevel, pyromid.infoLevel)) history = appendEvent(history, { at: now, type: 'pyromid', label: line })
   // The climax lines go in LAST so they stay newest-first — the headline sits atop the chronicle and a
   // big gift catch-up (Day 4 → Day 61 in one tick) can never bury or cap them out.
   if (climaxHappened) {
@@ -66,7 +73,7 @@ export function advance(prev, stats, now, claudeDelta = 0) {
     if (rebirthHappened) history = appendEvent(history, { at: now, type: 'rebirth', label: 'The City Reborn' })
   }
   const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
-  return { ...afterStats, sim: newSim, history, progress, gifts, climax, cycleStartAt }
+  return { ...afterStats, sim: newSim, history, progress, gifts, pyromid, climax, cycleStartAt }
 }
 
 export function tick(deps, now) {
@@ -88,6 +95,7 @@ export function tick(deps, now) {
     JSON.stringify(prev.history ?? []) !== JSON.stringify(next.history ?? []) ||
     JSON.stringify(prev.progress ?? {}) !== JSON.stringify(next.progress ?? {}) ||
     JSON.stringify(prev.gifts ?? {}) !== JSON.stringify(next.gifts ?? {}) ||
+    JSON.stringify(prev.pyromid ?? {}) !== JSON.stringify(next.pyromid ?? {}) ||
     JSON.stringify(prev.climax ?? null) !== JSON.stringify(next.climax ?? null) ||
     (prev.cycleStartAt ?? null) !== (next.cycleStartAt ?? null)
   if (!changed) return { changed: false, state: prev }

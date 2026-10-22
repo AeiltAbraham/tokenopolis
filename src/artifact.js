@@ -8,13 +8,14 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sceneFor } from './render/scene.js'
-import { economyFor } from './sim/economy.js'
+import { economyFor, treasuryFor } from './sim/economy.js'
 import { scaleName } from './sim/scale.js'
 import { effectiveBuilt } from './sim/condition.js'
-import { INFECTION } from './tuning.js'
+import { INFECTION, PYROMID } from './tuning.js'
 import { COOLDOWN_MS, LEGENDARY } from './acts.js'
 import { achievementsFor, streakFor } from './progress.js'
 import { dayOf, unlockedGrants, GIFTS } from './gifts.js'
+import { boostFor, loreFor, defaultPyromid, PYROMID_LORE } from './pyromid.js'
 import { formatEvent, summarize } from './history.js'
 import { DEFAULT_CONFIG } from './config.js'
 
@@ -52,15 +53,18 @@ export function cityData(state, config = DEFAULT_CONFIG) {
   const recovery = Math.max(0, Math.min(1, sim.recovery ?? 0))
   const grants = unlockedGrants(state.gifts)
   const services = { ...(sim.services || {}), ...grants.services }
-  const scene = sceneFor({ ...sim, era, services, giftLandmarks: grants.landmarks, giftFlags: grants.flags }, state.citySeed, sourceMix)
+  // The Pyromid datacenter: a high-water build toward 10B treasury that boosts the city as it rises.
+  const pyromid = state.pyromid ?? defaultPyromid()
+  const boost = boostFor(pyromid.progress)
+  const scene = sceneFor({ ...sim, era, services, giftLandmarks: grants.landmarks, giftFlags: grants.flags, pyromid: { progress: pyromid.progress } }, state.citySeed, sourceMix)
   const infection = sim.infection?.severity ?? 0 // the Outbreak drags population + economy down
   const eco = economyFor(effectiveBuilt(sim), sim.vitality * (1 - INFECTION.economyDrop * infection))
   let readout = {
     cityName: config.cityName,
     theme: effectiveTheme,
-    population: eco.population,
-    treasury: eco.treasury,
-    economyRating: eco.economyRating,
+    population: eco.population + boost.popBonus, // the datacenter's staff swell the city
+    treasury: eco.treasury + pyromid.bonus, // + what the Pyromid has been fed by clicking
+    economyRating: Math.round(eco.economyRating * boost.economyMult), // the datacenter powers the economy
     vitality: sim.vitality,
     condition: sim.condition,
     scaleName: scene.scaleName,
@@ -110,12 +114,23 @@ export function cityData(state, config = DEFAULT_CONFIG) {
     giftCount,
     giftTotal: GIFTS.length,
     lastGift,
+    pyromid: {
+      progress: pyromid.progress,
+      bonus: pyromid.bonus,
+      infoLevel: pyromid.infoLevel,
+      lore: loreFor(pyromid.infoLevel),
+      loreCount: PYROMID_LORE.length,
+      treasury: treasuryFor(sim, pyromid.bonus),
+      target: PYROMID.target,
+      clickValue: PYROMID.clickValue,
+    },
   }
 }
 
 export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   const data = cityData(state, config)
-  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift, era, climax } = data
+  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift, era, climax, pyromid } = data
+  const pyroPct = Math.round((pyromid?.progress ?? 0) * 100)
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
   const bundle = renderBundle()
 
@@ -190,6 +205,13 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   #recovery-wrap { margin: -6px 0 12px; height: 7px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
   #recovery-wrap[hidden] { display: none; }
   #recovery-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg,#c98a2a,#8fe3a8); transition: width .6s; }
+  .panel.pyromid h2 { color: #bcd4ff; }
+  .pyro-bar { height: 8px; border-radius: 999px; background: rgba(60,80,140,.18); overflow: hidden; margin: 2px 0 8px; }
+  .pyro-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg,#2f54a8,#8fb0ff); transition: width .5s; }
+  .pyro-treasury { font-size: 11.5px; opacity: .6; font-variant-numeric: tabular-nums; margin-bottom: 7px; }
+  .pyro-lore { font-size: 12px; line-height: 1.45; font-style: italic; color: #c9d6ef; opacity: .92; margin-bottom: 9px; min-height: 2.6em; }
+  .pyro-btn { width: 100%; background: linear-gradient(180deg,#24305a,#141d38); border-color: rgba(143,176,255,.32); }
+  .pyro-btn:hover { cursor: pointer; border-color: #8fb0ff; }
   .act-btn.mini { font-size: 12px; padding: 8px 12px; margin: 10px 0 2px; background: linear-gradient(180deg,#232a3a,#191e2a); }
   .act-btn.mini:hover { cursor: pointer; border-color: #6f9bff; }
   #act-banner.legendary { border-color: #ffd76a; box-shadow: 0 0 26px rgba(255,215,106,.55), 0 8px 28px rgba(0,0,0,.45); }
@@ -273,6 +295,13 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     <dt>Decay clock</dt><dd id="decay">—</dd>
   </dl>
   <button id="postcard-btn" class="act-btn mini" type="button" title="Save a PNG postcard of your city">📸 Save postcard</button>
+  <section class="panel pyromid" id="pyromid-panel">
+    <h2>⬛ Pyromid <span class="muted"><span id="pyro-pct">${pyroPct}</span>% built</span></h2>
+    <div class="pyro-bar"><div class="pyro-fill" id="pyro-fill" style="width:${pyroPct}%"></div></div>
+    <div class="pyro-treasury">§<span id="pyro-treasury">${fmt(pyromid.treasury)}</span> / §${Math.round(pyromid.target / 1e9)}B</div>
+    <div class="pyro-lore" id="pyro-lore">${esc(pyromid.lore)}</div>
+    <button id="pyro-btn" class="act-btn mini pyro-btn" type="button" title="Burn into the Pyromid (+$${pyromid.clickValue})">⬛ Burn · +$${pyromid.clickValue}</button>
+  </section>
   <section class="panel">
     <h2>Achievements <span class="muted">${achievements.filter((a) => a.earned).length}/${achievements.length}</span></h2>
     <div class="badges">${achievements
@@ -633,6 +662,50 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   if (postcardBtn && postcardBtn.addEventListener && typeof exportPostcard === 'function') {
     postcardBtn.addEventListener('click', function () { exportPostcard(document.getElementById('city'), DATA.readout); });
   }
+
+  // ---- The Pyromid: burn (+$10) from the HUD button OR by clicking the building, then re-render its panel. ----
+  function renderPyro(py) {
+    if (!py) return;
+    var pct = Math.round((py.progress || 0) * 100);
+    setTxt('pyro-pct', pct);
+    var fill = document.getElementById('pyro-fill'); if (fill) fill.style.width = pct + '%';
+    setTxt('pyro-treasury', grp(py.treasury || 0));
+    if (typeof py.lore === 'string') setTxt('pyro-lore', py.lore);
+  }
+  var pyroBusy = false;
+  function burnPyro() {
+    if (pyroBusy) return;
+    if (typeof fetch !== 'function') { setConn(false, STATIC_COPY); return; }
+    pyroBusy = true;
+    fetch('/pyro', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        setConn(true);
+        if (res && res.ok) {
+          DATA.pyromid = DATA.pyromid || {};
+          DATA.pyromid.progress = res.progress; DATA.pyromid.treasury = res.treasury; DATA.pyromid.bonus = res.bonus;
+          renderPyro(DATA.pyromid);
+          if (typeof res.displayTreasury !== 'undefined') setTxt('treasury', '§' + grp(res.displayTreasury));
+        }
+      })
+      .catch(function () { setConn(false, NOT_CONNECTED); })
+      .then(function () { if (typeof setTimeout === 'function') setTimeout(function () { pyroBusy = false; }, 180); else pyroBusy = false; });
+  }
+  var pyroBtn = document.getElementById('pyro-btn');
+  if (pyroBtn && pyroBtn.addEventListener) pyroBtn.addEventListener('click', burnPyro);
+  // Click the building itself — hit-test the Pyromid's screen box (the renderer and this share pyromidAnchor).
+  if (canvas && canvas.addEventListener && typeof pyromidAnchor === 'function') {
+    canvas.addEventListener('click', function (ev) {
+      if (!DATA.scene) return;
+      var rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: canvas.width, height: canvas.height };
+      var sx = (ev.clientX - rect.left) * (canvas.width / (rect.width || canvas.width));
+      var sy = (ev.clientY - rect.top) * (canvas.height / (rect.height || canvas.height));
+      var a = pyromidAnchor(DATA.scene, canvas.width, canvas.height);
+      var prog = (DATA.pyromid && DATA.pyromid.progress) || 0;
+      var topY = a.y - a.fullH * (0.1 + 0.9 * prog);
+      if (sx >= a.x - a.bw && sx <= a.x + a.bw && sy >= topY && sy <= a.y + a.bw * 0.5) burnPyro();
+    });
+  }
   // ---- Live growth: poll /state and update the city + numbers in place (no reload) when served locally. ----
   function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
   function grp(n) { return String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); } // \\ — inside a template literal
@@ -657,6 +730,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
     if (typeof s.theme !== 'undefined') { DATA.theme = s.theme; setTxt('themecap', 'theme: ' + s.theme); } // the era can snap the theme (ascension / wasteland) — keep the HUD caption in sync
     if (typeof s.era !== 'undefined') setEra(s.era, s.readout.recovery || 0);
     if (s.climax && s.climax.at && s.climax.at !== lastClimaxAt) { lastClimaxAt = s.climax.at; showClimax(s.climax.phase); } // the fall landed while watching
+    if (s.pyromid) { DATA.pyromid = s.pyromid; renderPyro(s.pyromid); } // the datacenter builds as the city burns
     updateActBtn();
   }
   function pollLive() {
@@ -672,6 +746,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG) {
   setupActs();
   setupGift();
   setupClimax();
+  renderPyro(DATA.pyromid);
   updateActBtn();
   pollLive(); // probe connection immediately so a static/stale copy shows the badge at once
   if (typeof setInterval === 'function') { setInterval(updateActBtn, 1000); setInterval(pollLive, 4000); }

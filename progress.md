@@ -169,3 +169,36 @@ cooldown hints). Version → 1.0.0. The Ascension & Fallout arc is complete.
 
 Also this session: wrote the live install's config (`~/.config/cornercase/plugins/config/tokenopolis/config.json`)
 to theme `coastal` (name kept "Tokenopolis") at the user's request, and poked the keeper to re-render.
+
+## 2026-10-21 — The Pyromid (v1.1.0): a mysterious datacenter landmark
+
+A new endgame feature at the user's request (from a reference image of a solar-panel pyramid). The
+**Pyromid** is a solar-pyramid datacenter that builds toward 10B treasury, clicks for +$10, boosts the
+city, and drip-feeds lore to a dark reveal ("the heart of the AI — and the reason we return to dust. It
+was all a simulation").
+
+Pure core `src/pyromid.js`: a 7-line lore catalog + `PYROMID` tuning (target 10e9, clickValue 10,
+boostEconomy 0.75, boostPopulation 5000); `updatePyromid(prev, treasury)` (progress = high-water
+clamp01(treasury/target) — it never un-builds, even when the wasteland takes the rest; infoLevel latches),
+`burn(prev)` (+clickValue to the bonus), `boostFor(progress)`, `infoLevelFor/loreFor/newlyUnlocked`.
+Shared `treasuryFor(sim, bonus)` added to `economy.js` (one source of truth for the Pyromid build, the
+click handler, and the readout). `tick.js advance()` builds it from the current treasury and chronicles
+each lore reveal (`⬛ Pyromid: …`, new `pyromid` history type). `state.pyromid = defaultPyromid()` default.
+
+Render: `scene.js` passes `pyromid: { progress }`; `draw.js` adds a `drawPyromid` (solar pyramid rising
+with progress — foundation → full height, chevron panel bands, a faint full-height scaffold, a gold
+capstone that blazes on completion; geometry is tick-independent so the grayscale/stale guards hold, no
+ctx.ellipse) plus an exported `pyromidAnchor` shared with the click hit-test.
+
+Interaction: `cityData` applies the boost (economyRating ×(1+0.75·progress), +pop) and embeds the Pyromid
+(progress, lore, treasury, target). Server gets `POST /pyro` (a shared `sameOriginLoopback` CSRF guard now
+covers /act + /pyro) → `runPyromidBurn` (service/main.js: +$10, high-water rebuild, chronicle, re-render).
+Artifact: a HUD Pyromid panel (⬛ % built, progress bar, §X / §10B, the current lore, a "⬛ Burn · +$10"
+button) + a canvas hit-test so clicking the BUILDING also burns; both live-update via applyLive.
+
+Tests: `test/pyromid.test.js` (8 — catalog, thresholds/lore, boost, high-water progress, burn, advance
+chronicle, runPyromidBurn, cityData boost/embed) + a server `/pyro` route test. Suite 181/181 (+9).
+Verified in-browser: at 70% the pyramid stands mid-build with the "it is learning" lore; the HUD **Burn**
+button AND clicking the building each add $10 (treasury 7,000,000,500 → 520 → 530); at 100% the gold
+capstone blazes with the final reveal; lore reveals chronicled; economy/pop boosted; no console errors.
+Version → 1.1.0.

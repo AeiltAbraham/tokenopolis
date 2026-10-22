@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, renameSync, appendFileSync, existsSync } f
 import { join } from 'node:path'
 import { defaultProgress } from './progress.js'
 import { defaultGifts } from './gifts.js'
+import { defaultPyromid } from './pyromid.js'
 
 export const SCHEMA_VERSION = 1
 
@@ -37,6 +38,7 @@ export function initState({ baselineLifetimeTokens, installedAt, citySeed }) {
     acts: { usedIds: [], lastActAt: null, last: null },
     progress: defaultProgress(), // achievements earned + active-day streak (grow-from-zero)
     gifts: defaultGifts(), // daily gifts: one per day since install (Days 1..59), unlocked set accumulates
+    pyromid: defaultPyromid(), // the mysterious datacenter: high-water build toward 10B treasury + click bonus + lore
     climax: null, // the climax marker { phase: 'ascension'|'fall'|'rebirth', at: ISO } — drives the one-time animation
     cycleStartAt: installedAt, // the current build→ascend→fall→recover cycle's day anchor (resets on rebirth)
     history: [], // chronicle: newest-first capped event log (acts, scale-ups, ruin/recovery, gifts, singularity)

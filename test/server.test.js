@@ -91,6 +91,34 @@ test('GET /choice returns options; POST /act?choice forwards the id to runAct', 
   }
 })
 
+test('POST /pyro runs the injected burn once and refuses cross-origin', async () => {
+  const dir = tmp()
+  writeFileSync(join(dir, 'city.html'), 'x')
+  let burns = 0
+  const live = await new Promise((resolve) => {
+    const s = startCityServer({
+      dir,
+      runAct: () => ({ ok: true }),
+      runPyro: () => (burns++, { ok: true, progress: 0.5, bonus: 10, treasury: 100 }),
+      basePort: 0,
+      onReady: (url) => resolve({ url, s }),
+    })
+  })
+  try {
+    const r = await fetch(live.url + '/pyro', { method: 'POST' })
+    assert.equal(r.status, 200)
+    const b = await r.json()
+    assert.equal(b.ok, true)
+    assert.equal(b.bonus, 10)
+    assert.equal(burns, 1, 'runPyro invoked once')
+    const cross = await fetch(live.url + '/pyro', { method: 'POST', headers: { Origin: 'http://evil.example' } })
+    assert.equal(cross.status, 403)
+    assert.equal(burns, 1, 'a cross-origin POST must NOT burn')
+  } finally {
+    live.s.close()
+  }
+})
+
 test('GET / is 404 before any city is rendered', async () => {
   const { url, server } = await boot(tmp(), () => ({ ok: true }))
   try {

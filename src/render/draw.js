@@ -143,6 +143,7 @@ export function drawCity(ctx, scene, theme, tick = 0) {
 
   mark(ctx, 'landmarks')
   for (const l of scene.landmarks) drawLandmark(ctx, l, p, ox, oy, tick)
+  drawPyromid(ctx, scene, tick) // the datacenter centrepiece — rises with its build progress
   drawOvergrowth(ctx, scene, ox, oy) // nature reclaims a stagnant/overrun city
 
   mark(ctx, 'citizens')
@@ -444,6 +445,91 @@ function drawBuilding(ctx, b, p, ox, oy, tick, stale, infection = 0) {
     ctx.fill()
     ctx.fillStyle = shade(p.rubble, -32)
     for (let d = 0; d < 3; d++) ctx.fillRect(x - hw * 0.5 + d * 6, y - 1 - d, 3, 2)
+  }
+}
+
+// The Pyromid's screen anchor — EXPORTED so the artifact's click hit-test lands on the same building the
+// renderer draws. Placed prominently at the city's front-centre.
+export function pyromidAnchor(scene, W, H) {
+  const ox = W / 2
+  const oy = H * 0.3
+  const n = Math.max(scene?.footprint?.cols ?? 1, scene?.footprint?.rows ?? 1)
+  const { x, y } = iso(n * 0.5, n * 0.66, ox, oy)
+  return { x, y, bw: 46, fullH: 150 }
+}
+
+// The solar-pyramid datacenter. Builds from a foundation up to the full pyramid as `progress` climbs,
+// with a faint scaffold of what it will become; the apex capstone blazes gold on completion. Geometry
+// depends on progress + footprint ONLY (never the tick), so grayscale/stale-frame guards hold — only the
+// capstone's COLOUR blinks. Uses arc/fillRect/moveTo/lineTo/stroke (no ctx.ellipse — the test stub lacks it).
+function drawPyromid(ctx, scene, tick) {
+  const py = scene.pyromid
+  if (!py) return
+  const prog = Math.max(0, Math.min(1, py.progress ?? 0))
+  const W = ctx.canvas?.width ?? 960
+  const H = ctx.canvas?.height ?? 640
+  const a = pyromidAnchor(scene, W, H)
+  const x = a.x, y = a.y, bw = a.bw
+  const h = a.fullH * (0.1 + 0.9 * prog) // a foundation that rises to the full height at completion
+  const apex = y - h
+  const base = y + bw * 0.5
+  // faint full-height scaffold — what it is becoming
+  ctx.strokeStyle = rgba('#8fb0ff', 0.18)
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(x - bw, y)
+  ctx.lineTo(x, y - a.fullH)
+  ctx.lineTo(x + bw, y)
+  ctx.stroke()
+  // foundation
+  ctx.fillStyle = rgba('#0a1530', 0.92)
+  diamond(ctx, x, base - bw * 0.5, bw * 0.78, bw * 0.4)
+  ctx.fill()
+  // left (sunlit) + right (shadow) solar faces
+  ctx.fillStyle = vgrad(ctx, x, apex, x, y, '#2f54a8', '#122455')
+  ctx.beginPath()
+  ctx.moveTo(x, apex)
+  ctx.lineTo(x - bw, y)
+  ctx.lineTo(x, base)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = vgrad(ctx, x, apex, x, y, '#1b3576', '#0a1530')
+  ctx.beginPath()
+  ctx.moveTo(x, apex)
+  ctx.lineTo(x + bw, y)
+  ctx.lineTo(x, base)
+  ctx.closePath()
+  ctx.fill()
+  // solar panel rows — chevron bands up the two faces
+  ctx.strokeStyle = rgba('#6f93e0', 0.5)
+  for (let i = 1; i < 9; i++) {
+    const f = i / 9
+    const ly = y - h * f
+    const lw = bw * (1 - f)
+    const sy = base - (base - apex) * f
+    ctx.beginPath()
+    ctx.moveTo(x - lw, ly)
+    ctx.lineTo(x, sy)
+    ctx.lineTo(x + lw, ly)
+    ctx.stroke()
+  }
+  // spine sheen
+  ctx.strokeStyle = rgba('#bcd4ff', 0.35)
+  ctx.beginPath()
+  ctx.moveTo(x, apex)
+  ctx.lineTo(x, base)
+  ctx.stroke()
+  // apex capstone: a dim pilot light that blazes gold when the Pyromid is complete
+  const done = prog >= 1
+  ctx.fillStyle = done ? (tick % 2 === 0 ? '#ffe9a6' : '#ffd76a') : rgba('#8fb0ff', 0.6)
+  ctx.beginPath()
+  ctx.arc(x, apex, done ? 5 : 3, 0, 7)
+  ctx.fill()
+  if (done) {
+    ctx.fillStyle = rgba('#ffd76a', 0.25)
+    ctx.beginPath()
+    ctx.arc(x, apex, 12, 0, 7)
+    ctx.fill()
   }
 }
 

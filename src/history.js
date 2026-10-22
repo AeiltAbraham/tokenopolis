@@ -6,7 +6,7 @@
 // lifetime tally.
 //
 // Event shape — a plain record, serialized into state.json as-is:
-//   { at: ISO string, type: 'act'|'milestone'|'scale'|'ruin'|'recovery'|'gift'|'singularity'|'downfall'|'rebirth', label: string, kind?: 'boon'|'disaster' }
+//   { at: ISO string, type: 'act'|'milestone'|'scale'|'ruin'|'recovery'|'gift'|'singularity'|'downfall'|'rebirth'|'pyromid', label: string, kind?: 'boon'|'disaster' }
 // `kind` is only meaningful for 'act' events (which Random Act fired); other types ignore it.
 
 export const HISTORY_CAP = 60 // headlines kept; the oldest fall off the tail (the log is newest-first)
@@ -38,6 +38,8 @@ export function formatEvent(event) {
       return `☢️ ${label} — the city is razed`
     case 'rebirth':
       return `🌅 ${label} — reborn from the wasteland`
+    case 'pyromid':
+      return `⬛ Pyromid: ${label}`
     case 'ruin':
       return '🧟 Fell into ruins'
     case 'recovery':

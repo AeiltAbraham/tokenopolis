@@ -7,7 +7,15 @@ import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-export function createCityServer({ dir, runAct, readState, readChoice }) {
+export function createCityServer({ dir, runAct, runPyro, readState, readChoice }) {
+  // CSRF/DNS-rebinding guard for mutating POSTs: a same-origin loopback fetch passes; a non-loopback Host
+  // or a cross-origin POST is refused, so a random web page the user visits can't trigger city changes.
+  const sameOriginLoopback = (req) => {
+    const host = req.headers.host || ''
+    const loopback = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(host)
+    const origin = req.headers.origin
+    return loopback && !(origin && origin !== `http://${host}` && origin !== `https://${host}`)
+  }
   return createServer((req, res) => {
     const path = (req.url || '/').split('?')[0]
     const query = (req.url || '').split('?')[1] || ''
@@ -69,13 +77,7 @@ export function createCityServer({ dir, runAct, readState, readChoice }) {
     }
 
     if (req.method === 'POST' && path === '/act') {
-      // CSRF guard: a same-origin fetch sends Origin === our own; a cross-site page sends a different
-      // one. Refuse the mismatch so a random web page the user visits can't trigger city events.
-      const origin = req.headers.origin
-      const host = req.headers.host || ''
-      const loopback = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(host)
-      // Reject a non-loopback Host (DNS-rebinding) and any cross-origin POST; a same-origin loopback passes.
-      if (!loopback || (origin && origin !== `http://${host}` && origin !== `https://${host}`)) {
+      if (!sameOriginLoopback(req)) {
         res.writeHead(403, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ ok: false, reason: 'forbidden' }))
         return
@@ -84,6 +86,24 @@ export function createCityServer({ dir, runAct, readState, readChoice }) {
       try {
         const choiceId = query ? new URLSearchParams(query).get('choice') : null
         out = runAct(choiceId || undefined) // a chosen act, or undefined → a random roll
+      } catch (e) {
+        out = { ok: false, reason: 'error', message: String(e && e.message) }
+      }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(out ?? { ok: false, reason: 'error' }))
+      return
+    }
+
+    // Pyromid: a click deposits into the datacenter's treasury (tokens burned — "pyro"), then re-renders.
+    if (req.method === 'POST' && path === '/pyro') {
+      if (!sameOriginLoopback(req)) {
+        res.writeHead(403, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, reason: 'forbidden' }))
+        return
+      }
+      let out
+      try {
+        out = runPyro ? runPyro() : { ok: false, reason: 'unsupported' }
       } catch (e) {
         out = { ok: false, reason: 'error', message: String(e && e.message) }
       }
@@ -101,8 +121,8 @@ export function createCityServer({ dir, runAct, readState, readChoice }) {
 // open browser tab keeps working — an ephemeral port would change on every restart and break it.
 // Falls back to the next port on a conflict. basePort 0 → ephemeral (used by tests). onReady(url,
 // server) fires once listening; onFail(err) on a non-recoverable error. Never binds a public interface.
-export function startCityServer({ dir, runAct, readState, readChoice, host = '127.0.0.1', basePort = 8420, maxTries = 20, onReady, onFail }) {
-  const server = createCityServer({ dir, runAct, readState, readChoice })
+export function startCityServer({ dir, runAct, runPyro, readState, readChoice, host = '127.0.0.1', basePort = 8420, maxTries = 20, onReady, onFail }) {
+  const server = createCityServer({ dir, runAct, runPyro, readState, readChoice })
   let port = basePort
   let tries = 0
   let sameTries = 0

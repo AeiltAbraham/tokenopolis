@@ -4,7 +4,7 @@
 // the vitality response alive even at zero burn; a (builtTokens × vitality) term makes a busy big
 // city outshine a sleepy one of the same size.
 
-import { ECONOMY } from '../tuning.js'
+import { ECONOMY, INFECTION } from '../tuning.js'
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x)
 
@@ -17,4 +17,14 @@ export function economyFor(builtTokens, vitality) {
   const economyRating = Math.floor(ECONOMY.ratingBase + ECONOMY.ratingVitality * v + ECONOMY.ratingPerToken * t * (0.4 + 0.6 * v))
 
   return { population, treasury, economyRating }
+}
+
+// The city's treasury the way the HUD shows it: the economy treasury at the sim's effective size +
+// vitality (outbreak-dampened), plus the Pyromid's click bonus. The single source of truth the
+// Pyromid build, the click handler, and the readout all share.
+export function treasuryFor(sim, bonus = 0) {
+  const eff = Math.max(0, (sim?.builtTokens ?? 0) + (sim?.actTokens ?? 0))
+  const infection = sim?.infection?.severity ?? 0
+  const vitality = (sim?.vitality ?? 0) * (1 - INFECTION.economyDrop * infection)
+  return economyFor(eff, vitality).treasury + Math.max(0, Number(bonus) || 0)
 }

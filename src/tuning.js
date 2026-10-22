@@ -72,6 +72,16 @@ export const RECOVERY = {
   healDays: 10, // idle days of restraint to heal the wasteland from razed (0) to reborn (1)
 }
 
+// The Pyromid: a mysterious solar-pyramid datacenter that builds toward `target` treasury. Clicking it
+// deposits `clickValue` (tokens are burned — "pyro"). As it builds it boosts the city, and drip-feeds
+// lore until the reveal. Progress is high-water (it never un-builds, even when the wasteland takes the rest).
+export const PYROMID = {
+  target: 10_000_000_000, // treasury at which the Pyromid completes (10 billion)
+  clickValue: 10, // treasury added per click ("+$10")
+  boostEconomy: 0.75, // economy-rating multiplier at full build: ×(1 + this)
+  boostPopulation: 5000, // residents (datacenter staff) added at full build
+}
+
 export const SCENE = {
   baseBuildings: 6, // buildings drawn in a hamlet
   buildingGrowth: 2.1, // conceptual buildings multiply per scale step (visible density climb)

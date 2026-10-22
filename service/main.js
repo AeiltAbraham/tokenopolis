@@ -14,6 +14,9 @@ import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/cl
 import { startCityServer } from '../src/server.js'
 import { runRandomAct } from '../bin/random-act.js'
 import { canAct, msUntilNextAct, drawChoice } from '../src/acts.js'
+import { burn, updatePyromid, newlyUnlocked } from '../src/pyromid.js'
+import { treasuryFor } from '../src/sim/economy.js'
+import { appendEvent } from '../src/history.js'
 
 const randomSeed = () => (Math.floor(Math.random() * 0xffffffff) >>> 0)
 
@@ -39,6 +42,23 @@ export function ensureState(dir, readStats, nowIso, config, claudeDir = claudePr
   writeArtifact(state, config, dir)
   logLine(dir, `initialized (grow-from-zero; baseline ${stats.lifetimeTotal} cornercase tokens; Claude counted forward)`, nowIso)
   return true
+}
+
+// A Pyromid click: deposit clickValue into the datacenter's treasury, re-build (high-water), chronicle
+// any lore it reveals, and re-render. No cooldown — the burn is the interaction. Injectable for tests.
+export function runPyromidBurn({ dir, nowIso = () => new Date().toISOString(), config = readConfig() }) {
+  const now = nowIso()
+  const state = loadState(dir, nowIso)
+  if (!state) return { ok: false, reason: 'no-state' }
+  const burned = burn(state.pyromid)
+  const pyromid = updatePyromid(burned, treasuryFor(state.sim, burned.bonus))
+  let history = state.history ?? []
+  for (const line of newlyUnlocked(state.pyromid?.infoLevel ?? 1, pyromid.infoLevel)) history = appendEvent(history, { at: now, type: 'pyromid', label: line })
+  const next = { ...state, pyromid, history, render: { ...state.render, lastRenderedAt: now } }
+  saveState(dir, next)
+  writeArtifact(next, config, dir)
+  const data = cityData(next, config)
+  return { ok: true, progress: pyromid.progress, bonus: pyromid.bonus, treasury: data.pyromid.treasury, displayTreasury: data.readout.treasury }
 }
 
 export function startService({
@@ -81,6 +101,7 @@ export function startService({
     cityServer = startCityServer({
       dir,
       runAct: (choiceId) => runRandomAct({ dir, open: () => {}, nowIso, config, choiceId }),
+      runPyro: () => runPyromidBurn({ dir, nowIso, config }),
       readState: () => {
         const s = loadState(dir, nowIso)
         return s ? cityData(s, config) : null
