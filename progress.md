@@ -202,3 +202,28 @@ Verified in-browser: at 70% the pyramid stands mid-build with the "it is learnin
 button AND clicking the building each add $10 (treasury 7,000,000,500 → 520 → 530); at 100% the gold
 capstone blazes with the final reveal; lore reveals chronicled; economy/pop boosted; no console errors.
 Version → 1.1.0.
+
+## 2026-10-22 — Integrated two community PRs (#2 path fix, #5 zoom) onto main
+
+Rebased + landed two external contributions after an adversarial review flagged both as request-changes.
+
+**PR #2 (rahul05ranjan) — resolve entry scripts from $CORNERCASE_PLUGIN_ROOT.** cornercase runs a plugin
+command in the clicked WORKSPACE folder, so the relative `node scripts/x.mjs` resolved against the user's
+project → MODULE_NOT_FOUND. All commands now use `["sh","-c","exec node \"$CORNERCASE_PLUGIN_ROOT/<file>\""]`
+(ROOT verified set by cornercase; argv-safe, double-quoted var, exec leaves no lingering shell). The review
+caught that a 4th command added to main after the PR — `random-act` — had the SAME bug; extended the fix to
+ALL FOUR commands. Updated the `wiring.test.js` "points at a file" guard to parse the new ROOT form (and now
+assert the ROOT form is used). Note: `sh -c` is POSIX-only, but the plugin already is (open/xdg-open/curl).
+
+**PR #5 (jacogaz) — zoom/pan the city view.** Wheel/pinch zoom around the pointer (≤600%), drag-to-pan
+clamped inside the canvas, a zoom control + double-click to fit; the city is drawn through a `view` transform
+(ctx.setTransform in frame()), the day/night/weather/outbreak washes stay screen-space. The review's key
+finding: the transform broke the new PYROMID burn-by-click (it hit-tested raw pointer coords against an
+untransformed box, so at z>1 the click missed the pyramid and a stale-box click spuriously burned). Fixed by
+a new exported pure `pyromidHitsAt(scene, W, H, view, sx, sy, progress)` in draw.js that inverse-maps the
+click through the view (wx=(sx-view.x)/view.z) before the box test; the boot click handler uses it. Ported
+PR #5's node:vm zoom test + added a click-while-zoomed regression guard (hits the drawn pyramid at z=1 AND
+zoomed; the stale un-zoomed box never burns). Suite 184/184 (+3). Verified in-browser: zoomed to 225% (sharp),
+pan clamps to the city, and clicking the enlarged pyramid burns it (+$10, treasury 7,000,000,500 → 510), no
+console errors. Version → 1.2.0. Both landed as two commits crediting the contributors; the PR branches
+themselves stay open (re-applied with fixes, not fast-forwarded).

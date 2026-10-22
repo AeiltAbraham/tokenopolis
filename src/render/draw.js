@@ -458,6 +458,21 @@ export function pyromidAnchor(scene, W, H) {
   return { x, y, bw: 46, fullH: 150 }
 }
 
+// Is the screen point (sx, sy) on the drawn Pyromid? Inverse-maps through the zoom view (screen = world×z
+// + offset) before testing the world-space box, so clicking the building still burns it at any zoom/pan.
+export function pyromidHitsAt(scene, W, H, view, sx, sy, progress) {
+  if (!scene || !scene.pyromid) return false
+  const a = pyromidAnchor(scene, W, H)
+  const z = view && view.z ? view.z : 1
+  const vx = view && view.x ? view.x : 0
+  const vy = view && view.y ? view.y : 0
+  const wx = (sx - vx) / z
+  const wy = (sy - vy) / z
+  const prog = Math.max(0, Math.min(1, progress || 0))
+  const topY = a.y - a.fullH * (0.1 + 0.9 * prog)
+  return wx >= a.x - a.bw && wx <= a.x + a.bw && wy >= topY && wy <= a.y + a.bw * 0.5
+}
+
 // The solar-pyramid datacenter. Builds from a foundation up to the full pyramid as `progress` climbs,
 // with a faint scaffold of what it will become; the apex capstone blazes gold on completion. Geometry
 // depends on progress + footprint ONLY (never the tick), so grayscale/stale-frame guards hold — only the

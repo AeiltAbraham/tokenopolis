@@ -9,6 +9,7 @@ import { advance } from '../src/tick.js'
 import { initState, saveState, loadState } from '../src/state.js'
 import { cityData } from '../src/artifact.js'
 import { runPyromidBurn } from '../service/main.js'
+import { pyromidHitsAt, pyromidAnchor } from '../src/render/draw.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'tok-pyro-'))
 const DAY = 86_400_000
@@ -91,4 +92,23 @@ test('cityData embeds the Pyromid, feeds the landmark, and applies its boost', (
   let noPyro = advance(initState({ baselineLifetimeTokens: 0, installedAt: iso(0), citySeed: 1 }), { lifetimeTotal: 8_000_000_000, burn24h: 8e9, burn7d: 8e9, readAt: iso(1) }, iso(1))
   noPyro = { ...noPyro, pyromid: defaultPyromid() } // same sim, Pyromid not built
   assert.ok(cityData(bare, cfg).readout.economyRating > cityData(noPyro, cfg).readout.economyRating, 'a built Pyromid boosts the economy')
+})
+
+test('pyromidHitsAt is zoom-aware: clicking the drawn pyramid burns it at z=1 AND when zoomed/panned', () => {
+  const scene = { footprint: { cols: 10, rows: 10 }, pyromid: { progress: 0.7 } }
+  const W = 960, H = 640, prog = 0.7
+  const a = pyromidAnchor(scene, W, H)
+  const cx = a.x, cy = a.y - a.fullH * (0.1 + 0.9 * prog) * 0.5 // a point inside the built pyramid
+  // At fit-to-view (z=1), the raw canvas point hits.
+  assert.ok(pyromidHitsAt(scene, W, H, { z: 1, x: 0, y: 0 }, cx, cy, prog), 'hits at z=1')
+  // Zoomed/panned: the pyramid is drawn at screen = world×z + offset. A click at that SCREEN point must hit,
+  const view = { z: 2, x: -100, y: -50 }
+  const sx = cx * view.z + view.x, sy = cy * view.z + view.y
+  assert.ok(pyromidHitsAt(scene, W, H, view, sx, sy, prog), 'hits the drawn pyramid when zoomed')
+  // …and a click at the STALE un-zoomed box location must NOT burn (the bug the inverse-map prevents).
+  assert.ok(!pyromidHitsAt(scene, W, H, view, cx, cy, prog), 'the stale un-zoomed box does not spuriously burn')
+})
+
+test('pyromidHitsAt: no Pyromid in the scene → never a hit', () => {
+  assert.equal(pyromidHitsAt({ footprint: { cols: 4, rows: 4 } }, 960, 640, { z: 1, x: 0, y: 0 }, 480, 320, 0), false)
 })

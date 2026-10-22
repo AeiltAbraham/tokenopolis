@@ -71,6 +71,9 @@ Then open your city from the **Open Tokenopolis** action (workspace or pane menu
   severe version). Plus a gritty **wasteland** theme and deeper decay — **boarded windows** and
   **overgrowth** reclaiming an idle city. All original work (no third-party game assets or code).
 
+- **Zoom:** scroll or pinch over the city to zoom in around the pointer (up to 600%), drag to pan while zoomed
+  in, and double-click or the zoom control's percentage to see the whole city again.
+
 See `spec.md` / `clarify.md` / `plan.md` for the full design. Build status: `progress.md`.
 
 ## Configuration
