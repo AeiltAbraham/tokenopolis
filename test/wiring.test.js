@@ -67,7 +67,9 @@ test('every manifest command points at a file that exists', () => {
   const entries = [...(manifest.service ?? []), ...(manifest.events ?? []), ...(manifest.actions ?? [])]
   assert.ok(entries.length >= 3)
   for (const e of entries) {
-    const file = e.command[1] // ["node", "<file>"]
-    assert.ok(existsSync(join(root, file)), `manifest command file missing: ${file}`)
+    // Commands run their entry via $CORNERCASE_PLUGIN_ROOT (cwd-independent): ["sh","-c","exec node \"$CORNERCASE_PLUGIN_ROOT/<file>\""].
+    const m = e.command.join(' ').match(/\$CORNERCASE_PLUGIN_ROOT\/(\S+?)"/)
+    assert.ok(m, `command must resolve its entry from $CORNERCASE_PLUGIN_ROOT: ${JSON.stringify(e.command)}`)
+    assert.ok(existsSync(join(root, m[1])), `manifest command file missing: ${m[1]}`)
   }
 })

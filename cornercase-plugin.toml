@@ -4,26 +4,32 @@ version = "1.1.0"
 description = "Grow a SimCity-style city as you burn tokens in cornercase — village to metropolis and back to ruins. Beta; contributions welcome (especially styling)."
 permissions = ["read-stats", "open-file"]
 
+# Entry scripts are resolved from $CORNERCASE_PLUGIN_ROOT (set by cornercase), NOT a relative path:
+# cornercase runs a command in the clicked WORKSPACE folder, so "node scripts/x.mjs" would resolve
+# against the user's project → MODULE_NOT_FOUND. The sh -c "exec node …" form is argv-safe (the var is
+# double-quoted; exec leaves no lingering shell). Each script still finds its own state via
+# $CORNERCASE_PLUGIN_STATE internally. (PR #1/#2, rahul05ranjan — extended here to all four commands.)
+
 # Long-running keeper: polls `cornercase stats`, runs the sim, re-renders the city artifact.
 [[service]]
 id = "city-keeper"
-command = ["node", "service/main.js"]
+command = ["sh", "-c", "exec node \"$CORNERCASE_PLUGIN_ROOT/service/main.js\""]
 
 # Agent status changes just poke the keeper (hooks are killed at 60s — real work stays in the service).
 [[events]]
 on = "status"
-command = ["node", "scripts/poke.mjs"]
+command = ["sh", "-c", "exec node \"$CORNERCASE_PLUGIN_ROOT/scripts/poke.mjs\""]
 
 # Open the rendered city.
 [[actions]]
 id = "open-city"
 title = "Open Tokenopolis"
 contexts = ["workspace", "pane"]
-command = ["node", "scripts/open-city.mjs"]
+command = ["sh", "-c", "exec node \"$CORNERCASE_PLUGIN_ROOT/scripts/open-city.mjs\""]
 
 # A Random Act: once an hour, a hurricane, a meteor, a flash skyscraper… — grow or wreck the city.
 [[actions]]
 id = "random-act"
 title = "A Random Act"
 contexts = ["workspace", "pane"]
-command = ["node", "bin/random-act.js"]
+command = ["sh", "-c", "exec node \"$CORNERCASE_PLUGIN_ROOT/bin/random-act.js\""]
