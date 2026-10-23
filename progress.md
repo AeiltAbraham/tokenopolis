@@ -428,4 +428,39 @@ Times panel upgraded in place; vignettes nod to the district; ~4 notable residen
 Suite 199/199 (195 + 4 residents tests). **Mutation-checked:** name-uniqueness (all names identical → RED)
 + district-skew (flip the comparison → RED), both reverted → green. Verified live on the keeper: the Times
 panel shows the cast (Nina/Dag/Rosa/Theo, all tech since the city is 100% Tech) + dated chronicle; new events
-get vignettes going forward. Adversarial review (workflow w509rgu0y) pending at write time. Version → 1.7.0.
+get vignettes going forward. Adversarial review (workflow w509rgu0y) → **0 findings**. Shipped 9d8d05e.
+Version → 1.7.0.
+
+## 2026-10-23 — The Region ("country"): shared-git-repo multi-city view (v1.8.0)
+
+Second of the two features ("run both"). Lets people running their own keeper **join a shared country** and
+see each other's cities develop — opt-in, tiny, privacy-first, no backend. Per region/spec.md.
+
+- **`src/region.js` (new, keeper-side):** `cityPostcard(data, config, nowIso)` — PURE, coarse shareable
+  fields only (NO tokens/events/IP/path/OS-user); `nearCity` gated on `shareLocation`. `syncRegion(...)` —
+  clone-if-missing the country repo, then loop {fetch, reset --hard origin/branch, write cities/<handle>.json,
+  add, commit --allow-empty, push HEAD:branch with up-to-3 retry on a push race}, then read cities/*.json
+  (minus self) → roster. Each keeper only writes its OWN file ⇒ conflict-free. git is **injectable** (default
+  shells to the system git via `execFile` — no shell, so repo/handle can't inject). **Never throws.**
+  Module cache + getCachedRegion(). No new dependency.
+- **`src/config.js`:** optional `region {repo, handle, shareLocation?, intervalMs?, branch?}` — both repo +
+  handle required else OFF; handle sanitised to `[A-Za-z0-9_-]` (no path traversal in cities/<handle>.json);
+  interval clamped [60s, 60m]. No secrets in config — git auth is the user's own system creds.
+- **`service/main.js`:** a crash-safe region loop (immediate + intervalMs) — build the postcard, syncRegion,
+  then writeArtifact so neighbours land in the baked HTML; cleared in stop(). Modelled on the geoweather loop.
+- **`src/artifact.js`:** cityData exposes the roster (`+ active` = refreshed < 90 min); the HUD shows a **"The
+  Region"** leaderboard (sorted by population, active dot, era badge ⚡/☢️, handle, nearCity, scale + vit%).
+  Empty roster → no panel. Baked in (self-contained); roster also on /state.
+
+Suite 203/203 (199 + 4 region tests incl. a **real git e2e**: bare country repo + a seeded neighbour → clone,
+publish our postcard, read roster, exclude self). **Mutation-checked:** self-exclusion (drop the `handle !==`
+filter → e2e RED) + location-gating (ignore shareLocation → postcard RED), both reverted → green. Verified
+visually: the panel renders a 3-city country (Keesopolis ⚡ / Priyagar / Ninatown ☢️) sorted + dotted + badged.
+Adversarial review (workflow w2lqp2yca) → 4 confirmed, **all fixed + mutation-checked**: (1) git arg-injection
+via repo/branch → config rejects a leading `-` + charset-limits branch; (2) unbounded neighbour postcards
+could blow the 300 KB budget → `clampPostcard` caps every field on read, bloated (>64 KB) files are skipped,
+roster capped at 60; (3 HIGH) `--depth 1` broke a non-default branch → reset via `FETCH_HEAD` (new
+non-default-branch e2e); (4) commit metadata leaked the OS user → anonymous `-c user.name/email=<handle>`.
+Suite now 205/205. **v2 follow-ups (noted):** neighbour
+silhouettes on the horizon (replace the procedural distant towns), regional chronicle headlines (diff the
+roster → Times entries), live panel updates via applyLive, and a README setup section. Version → 1.8.0.

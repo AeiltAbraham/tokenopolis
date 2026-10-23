@@ -10,6 +10,7 @@ import { loadState, saveState, initState, logLine } from '../src/state.js'
 import { writeArtifact, cityData } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
 import { refreshGeoWeather } from '../src/geoweather.js'
+import { cityPostcard, syncRegion } from '../src/region.js'
 import { tick } from '../src/tick.js'
 import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/claude-stats.js'
 import { startCityServer } from '../src/server.js'
@@ -104,6 +105,40 @@ export function startService({
   refreshEnv()
   const envInterval = setInterval(refreshEnv, 15 * 60_000)
 
+  // The Region ("country"): when configured, publish our postcard + fetch the roster through the shared git
+  // repo, then rebuild so neighbours land in the baked HTML. Crash-safe + non-blocking, like geoweather.
+  let regionInterval = null
+  if (config.region) {
+    const refreshRegion = () => {
+      let s
+      try {
+        s = loadState(dir, nowIso)
+      } catch {
+        s = null
+      }
+      if (!s) return
+      let postcard
+      try {
+        postcard = cityPostcard(cityData(s, config), config, nowIso())
+      } catch (e) {
+        logLine(dir, `region postcard error: ${e && e.message}`, nowIso)
+        return
+      }
+      syncRegion({ dir, repo: config.region.repo, handle: config.region.handle, postcard, branch: config.region.branch })
+        .then(() => {
+          try {
+            const s2 = loadState(dir, nowIso)
+            if (s2) writeArtifact(s2, config, dir)
+          } catch (e) {
+            logLine(dir, `region rebuild error: ${e && e.message}`, nowIso)
+          }
+        })
+        .catch((e) => logLine(dir, `region error: ${e && e.message}`, nowIso))
+    }
+    refreshRegion()
+    regionInterval = setInterval(refreshRegion, config.region.intervalMs)
+  }
+
   let watcher
   try {
     watcher = watch(dir, (_event, file) => {
@@ -157,6 +192,7 @@ export function startService({
     stop() {
       clearInterval(interval)
       clearInterval(envInterval)
+      if (regionInterval) clearInterval(regionInterval)
       try {
         watcher && watcher.close()
       } catch {
