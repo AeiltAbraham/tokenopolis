@@ -55,24 +55,35 @@ Then open your city from the **Open Tokenopolis** action (workspace or pane menu
   short animation. The service serves the city on `127.0.0.1` so the button can fire the act; off
   cooldown it glows "ready", otherwise it shows a live countdown. (Opened as a shared/static file
   the button falls back to the ⋯ menu's **A Random Act** action.)
-- **v0.4 "Living City":** the city is alive — **day/night** tinting and **seasonal weather** (snow,
-  leaves) keyed to the real clock, **citizens & traffic** moving on the streets, and **live growth**
-  (the open page polls `/state` and grows in place as you burn, no reload). Plus **achievements** +
-  an active-day **streak**, a **chronicle** of the city's events, **legendary** 1-in-25 acts with a
-  gold banner, four new **themes** (cyberpunk, solarpunk, blueprint, crt), a **Save postcard** PNG
-  export, and cornercase **milestone notifications**.
-- **v0.5:** **choose-your-act** (pick between two acts instead of a random roll), **districts** split
-  by burn source — Claude Code ("tech") vs cornercase agents ("industry"), tinted on the rooftops —
-  and **personalization**: a `flag` emoji by the city name, custom district names, and an optional
-  ambient-**audio** toggle (muted by default). Config keys: `cityName`, `theme`, `flag`, `districts`.
-- **v0.6 — Survival:** an **Outbreak** you fight back by burning — the city darkens, streets empty, a
-  few shamblers roam, and severity falls as you work (an **Outbreak contained** chronicle entry + a
-  **Quarantine Lifted** achievement when you clear it; a rare **Zombie Outbreak** legendary is the
-  severe version). Plus a gritty **wasteland** theme and deeper decay — **boarded windows** and
-  **overgrowth** reclaiming an idle city. All original work (no third-party game assets or code).
 
-- **Zoom:** scroll or pinch over the city to zoom in around the pointer (up to 600%), drag to pan while zoomed
-  in, and double-click or the zoom control's percentage to see the whole city again.
+The city keeps gaining life as you use it:
+
+- **The Pyromid** — a mysterious datacenter landmark that rises from the city as you burn; click it to
+  feed its treasury and unlock fragments of its lore.
+- **A living, real-time city** — **day/night** tinting and **weather** keyed to your real local clock and
+  **location** (the city is titled *"Tokenopolis near \<your city\>"*); **window lights** that follow the
+  clock (homes brighten through the evening and go dark after 23:00), **street lamps** and **headlights**
+  at night, **citizens & traffic** that thin out as people sleep, and **live in-place growth** (the open
+  page polls `/state` and grows as you burn — no reload).
+- **Named residents & the Tokenopolis Times** — a small cast of **named residents** across the tech and
+  industry districts, and a dated **chronicle** of the city's life: acts, milestones, disasters, and short
+  resident vignettes.
+- **Acts & survival** — **choose-your-act** hourly (pick between two draws from a 50-outcome deck — boons
+  grow and prettify, disasters wreck), rare **legendary** 1-in-25 acts, an **Outbreak** you fight back by
+  burning, and deep decay when you go quiet (**blight**, **boarded windows**, **overgrowth**, **ruins**).
+  Plus **achievements** and an active-day **streak**.
+- **The Region** — opt in and your city joins a shared **"country"**: friends' cities ring your **horizon**
+  and climb a **leaderboard**, and their milestones drop into your Times. Privacy-first, no backend — see
+  **[The Region](#the-region-optional--join-a-country-with-friends)** under Configuration.
+- **Make it yours & share it** — a `flag` emoji and custom **district names** (tech = Claude Code, industry
+  = cornercase agents), a **Save postcard** PNG export, an ambient **audio** toggle (muted by default), and
+  cornercase **milestone notifications**.
+- **Zoom & pan** — scroll or pinch to zoom around the pointer (up to 600%), drag to pan, and double-click or
+  the zoom percentage to fit the whole city again.
+- **Themes** — eleven hand-tuned palettes (see [Configuration](#configuration)); the city can also snap to a
+  radiant **ascension** look at the Singularity or a grim **wasteland** after a fall.
+
+All of it is **original work — no third-party game assets or code.**
 
 See `spec.md` / `clarify.md` / `plan.md` for the full design. Build status: `progress.md`.
 
@@ -84,7 +95,9 @@ Cosmetic only — no effect on the simulation. Create `config.json` in `$CORNERC
 { "cityName": "Tokenopolis", "theme": "temperate" }
 ```
 
-Themes: `temperate · coastal · desert · nordic · neon`. Missing or invalid values fall back to the
+Themes (**11**): naturalistic — `temperate · coastal · desert · nordic · solarpunk`; stylised —
+`cyberpunk · neon · crt · blueprint`; and two mood themes the era can also snap to on its own,
+`ascension` (the Singularity) and `wasteland` (the fall). Missing or invalid values fall back to the
 defaults. (The config path is assumed to be `$CORNERCASE_PLUGIN_CONFIG/config.json`; confirm against
 your cornercase version — see the owed hook/path probe noted in `progress.md`.)
 
@@ -154,7 +167,7 @@ Before the first publish, run the real-platform smoke (link + enable in a live c
 
 Tokenopolis is **public and open to contributions — especially styling.** Great places to start:
 
-- **Themes / palettes** → `src/render/themes.js` (five palettes today — refine them or add your own)
+- **Themes / palettes** → `src/render/themes.js` (eleven palettes today — refine them or add your own)
 - **The renderer** → `src/render/draw.js` (isometric buildings, lit windows, roads, infra tiers,
   damage/ruins, animation)
 - **City shape** → `src/render/scene.js` (zoning, density, LOD, landmarks, underground)
