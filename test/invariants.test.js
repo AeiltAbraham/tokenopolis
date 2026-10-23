@@ -4,7 +4,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { CONDITIONS } from '../src/tuning.js'
+import { CONDITIONS, DECAY } from '../src/tuning.js'
 import { initState, applyStatsRead } from '../src/state.js'
 import { step } from '../src/sim/condition.js'
 import { scaleFor, tokensForIndex } from '../src/sim/scale.js'
@@ -18,10 +18,13 @@ const condIdx = (n) => CONDITIONS.indexOf(n)
 // can't detect "meaningful burn" and the decay clock never resets. This is the tick contract (T-011).
 function buildToMetropolis() {
   let state = initState({ baselineLifetimeTokens: 0, installedAt: iso(0), citySeed: 1 })
+  const target = tokensForIndex(4) // linear: the burn that reaches Metropolis (index 4)
+  const perDay = Math.ceil(target / 4)
   for (let day = 1; day <= 4; day++) {
     const prevSim = state.sim
-    const next = applyStatsRead(state, { lifetimeTotal: day * 35_000_000, burn24h: 35e6, burn7d: 35e6, readAt: iso(day) })
-    state = { ...next, sim: step(prevSim, { builtTokens: next.sim.builtTokens, burn24h: 35e6, burn7d: 35e6 }, iso(day)) }
+    const lifetime = Math.min(target, day * perDay)
+    const next = applyStatsRead(state, { lifetimeTotal: lifetime, burn24h: perDay, burn7d: perDay, readAt: iso(day) })
+    state = { ...next, sim: step(prevSim, { builtTokens: next.sim.builtTokens, burn24h: perDay, burn7d: perDay }, iso(day)) }
   }
   return state // peak 4 (Metropolis), lastMeaningfulBurnAt = day 4
 }
@@ -68,8 +71,8 @@ test('guard 3a — scale regresses only when condition is Ruins or worse', () =>
   assert.ok(sawRegression, 'scenario must actually reach regression')
 })
 
-// GUARD 3b — recovery from ruins costs ≤ 1/5 of the original climb. Mutant: drop the recovery divisor.
-test('guard 3b — recovery from ruins costs ≤ 1/5 of the original climb', () => {
+// GUARD 3b — recovery from ruins costs ≈ 1/recoveryFactor of the original climb. Mutant: drop the divisor.
+test('guard 3b — recovery from ruins costs ≈ 1/recoveryFactor of the original climb', () => {
   const built = buildToMetropolis()
   const ruined = step(built.sim, { builtTokens: built.sim.builtTokens, burn24h: 0, burn7d: 0 }, iso(4 + 12))
   assert.ok(ruined.ruinProgress >= 1 && ruined.scaleIndex < ruined.peakScaleIndex, 'precondition: must be regressed')
@@ -78,12 +81,14 @@ test('guard 3b — recovery from ruins costs ≤ 1/5 of the original climb', () 
   let b = built.sim.builtTokens
   let spent = 0
   let t = 4 + 12
-  for (let i = 0; i < 1000 && s.scaleIndex < s.peakScaleIndex; i++) {
+  for (let i = 0; i < 2000 && s.scaleIndex < s.peakScaleIndex; i++) {
     b += 1_000_000
     spent += 1_000_000
     t += 0.001
     s = step(s, { builtTokens: b, burn24h: 1e6, burn7d: 1e6 }, iso(t))
   }
   assert.equal(s.scaleIndex, s.peakScaleIndex, 'recovery must reach peak')
-  assert.ok(spent <= originalClimb / 5, `recovery ${spent} must be ≤ 1/5 of ${originalClimb}`)
+  // ≈ 1/recoveryFactor the first climb (+ up to ~1 chunk of overshoot per reclaimed level); a dropped divisor
+  // would cost the FULL climb (recoveryFactor×), blowing past this bound.
+  assert.ok(spent <= originalClimb / DECAY.recoveryFactor + 2_000_000, `recovery ${spent} ≈ 1/${DECAY.recoveryFactor} of ${originalClimb}`)
 })

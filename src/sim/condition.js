@@ -7,7 +7,7 @@
 // the decay core derives activity from the builtTokens delta + elapsed time (the recency signal).
 
 import { DECAY, CONDITIONS, INFECTION, SINGULARITY, RECOVERY } from '../tuning.js'
-import { scaleFor, tokensForIndex } from './scale.js'
+import { scaleFromBuild, buildProgress, tokensForIndex } from './scale.js'
 
 const DAY_MS = 86_400_000
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x)
@@ -44,7 +44,7 @@ function recoveryCostForLevel(fromIndex) {
 // the recovery clock, `justFell` anchors it at 0 on the fall tick). As recovery climbs the wasteland
 // rebuilds — scale, condition and life all track it — until at 1.0 the city is REBORN green and
 // thriving, the era loops back to 'build', and a fresh cycle can begin. Pure: same prev → same sim.
-function falloutStep(prev, builtTokens, now, singularityAt, justFell) {
+function falloutStep(prev, builtTokens, now, singularityAt, justFell, lifetimeDayElapsed = 0) {
   const peak = prev.peakScaleIndex ?? 0
   const nowMs = Date.parse(now)
   const meaningful = builtTokens - (prev.builtTokens ?? 0) >= DECAY.meaningfulTokens
@@ -58,7 +58,8 @@ function falloutStep(prev, builtTokens, now, singularityAt, justFell) {
 
   // Rebirth: fully recovered → a fresh green thriving city, era back to 'build', singularity re-armed.
   if (recovery >= 1) {
-    const builtIndex = scaleFor(Math.max(0, builtTokens)).scaleIndex
+    // Reborn at the city's LIFETIME maturity — grand again, since 30+ days have passed since install.
+    const builtIndex = scaleFromBuild(buildProgress(Math.max(0, builtTokens), lifetimeDayElapsed)).scaleIndex
     return {
       builtTokens,
       actTokens: 0, // the act lever is wiped clean for the new life
@@ -72,7 +73,7 @@ function falloutStep(prev, builtTokens, now, singularityAt, justFell) {
       infection: { severity: 0, startedAt: null },
       era: 'build',
       recovery: 0,
-      singularityAt: null, // re-armed: the next 60-day cycle can ascend again
+      singularityAt: null, // re-armed: the next build cycle can ascend again
     }
   }
 
@@ -99,26 +100,30 @@ function falloutStep(prev, builtTokens, now, singularityAt, justFell) {
 
 // step(prevSim, {builtTokens, burn24h, burn7d, day}, nowIso) → full sim block (see plan §2.2).
 // `day` (days since install, from tick.js) drives the Singularity; omitted → day 0 → stays in 'build'.
-export function step(prevSim, { builtTokens, burn24h, burn7d, day = 0 }, now) {
+export function step(prevSim, { builtTokens, burn24h, burn7d, day = 1, lifetimeDay = 1, cycleStartTokens = 0 }, now) {
   const prev = prevSim ?? {}
   const nowMs = Date.parse(now)
+  const dayElapsed = Math.max(0, day - 1) // `day` is 1-based (install = day 1); the meter counts ELAPSED days
+  const lifetimeDayElapsed = Math.max(0, lifetimeDay - 1)
 
-  // --- Era transitions. Evaluated first, and sequentially, so a single tick that jumps past both days
-  // (a long absence, or an injected demo day) ascends AND falls in one step. ---
+  // --- Era transitions, evaluated first. The Singularity fires when the PER-CYCLE build meter tops out
+  // (1B real tokens OR 30 elapsed days, whichever first), then holds `holdDays` before the nuclear fall. ---
   let era = prev.era ?? 'build'
   let singularityAt = prev.singularityAt ?? null
-  if (era === 'build' && day >= SINGULARITY.ascendDay) {
+  const realCycleTokens = Math.max(0, builtTokens - cycleStartTokens) // real burn THIS cycle — acts don't trigger the climax
+  if (era === 'build' && buildProgress(realCycleTokens, dayElapsed) >= 1) {
     era = 'ascendant'
-    singularityAt = now
+    singularityAt = singularityAt ?? now
   }
-  if (era === 'ascendant' && day >= SINGULARITY.fallDay) era = 'fallout'
-  if (era === 'fallout') return falloutStep(prev, builtTokens, now, singularityAt, (prev.era ?? 'build') !== 'fallout')
+  if (era === 'ascendant' && singularityAt && nowMs - Date.parse(singularityAt) >= SINGULARITY.holdDays * DAY_MS) era = 'fallout'
+  if (era === 'fallout') return falloutStep(prev, builtTokens, now, singularityAt, (prev.era ?? 'build') !== 'fallout', lifetimeDayElapsed)
 
-  // Scale follows effective size (real burn + the act lever), so a boon grows the city and a disaster
-  // shrinks it. Peak is the high-water "bones"; a boon can raise it, a disaster never lowers it.
+  // Scale follows the LIFETIME build meter — effective size (real burn + the act lever) OR elapsed days
+  // since install, mapped LINEARLY to the ladder (steady climb, no front-loaded slowdown). A boon grows
+  // the city and a disaster shrinks it via the token term; peak is the high-water "bones" a disaster never lowers.
   const actTokens = prev.actTokens ?? 0
   const eff = Math.max(0, builtTokens + actTokens)
-  const builtIndex = scaleFor(eff).scaleIndex
+  const builtIndex = scaleFromBuild(buildProgress(eff, lifetimeDayElapsed)).scaleIndex
   const peakScaleIndex = Math.max(prev.peakScaleIndex ?? 0, builtIndex)
 
   const delta = builtTokens - (prev.builtTokens ?? 0) // real burn only — acts are not "burn"
@@ -161,8 +166,8 @@ export function step(prevSim, { builtTokens, burn24h, burn7d, day = 0 }, now) {
   }
   const infection = { severity: infSeverity, startedAt: infSeverity > 0 ? (prevInf.startedAt ?? now) : null }
 
-  // The Ascension (era 'ascendant', Day 60): the city flares to its gleaming peak — no decay, no
-  // ruins, no outbreak, full vitality — its proudest moment, held until the fall on Day 61.
+  // The Ascension (era 'ascendant'): the city flares to its gleaming peak — no decay, no ruins, no
+  // outbreak, full vitality — its proudest moment, held (SINGULARITY.holdDays) until the fall.
   if (era === 'ascendant') {
     return {
       builtTokens,

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { SCALE_NAMES } from '../src/tuning.js'
+import { SCALE_NAMES, BUILD } from '../src/tuning.js'
 import { scaleFor, tokensForIndex, scaleName, undergroundTiers } from '../src/sim/scale.js'
 import { economyFor } from '../src/sim/economy.js'
 
@@ -8,21 +8,20 @@ test('index 0 at 0 tokens is Hamlet with no underground', () => {
   assert.deepEqual(scaleFor(0), { scaleIndex: 0, scaleName: 'Hamlet', undergroundTiers: 0 })
 })
 
-test('thresholds are front-loaded: the cost of one step strictly grows', () => {
-  let prevStep = -1
-  for (let n = 1; n <= 12; n++) {
+test('thresholds are linear: each scale step costs an equal slice of the token cap', () => {
+  const stepCost = tokensForIndex(1) - tokensForIndex(0)
+  for (let n = 1; n <= BUILD.topIndex; n++) {
     assert.ok(tokensForIndex(n) > tokensForIndex(n - 1), `tokensForIndex must increase at n=${n}`)
-    const step = tokensForIndex(n + 1) - tokensForIndex(n)
-    assert.ok(step > prevStep, `step cost must strictly grow at n=${n} (front-loaded)`)
-    prevStep = step
+    const step = tokensForIndex(n) - tokensForIndex(n - 1)
+    assert.ok(Math.abs(step - stepCost) <= 1, `each step must cost an equal slice (linear), n=${n}: ${step} vs ${stepCost}`)
   }
 })
 
-test('equal token increments buy strictly fewer scale levels as the city grows', () => {
-  const inc = tokensForIndex(3) // a fixed, generous budget
+test('equal token increments buy EQUAL scale levels (linear, not front-loaded)', () => {
+  const inc = tokensForIndex(2) // a fixed budget worth ~2 levels
   const early = scaleFor(inc).scaleIndex - scaleFor(0).scaleIndex
-  const later = scaleFor(tokensForIndex(8) + inc).scaleIndex - scaleFor(tokensForIndex(8)).scaleIndex
-  assert.ok(early > later, `front-loaded: early gain ${early} should exceed later gain ${later}`)
+  const later = scaleFor(tokensForIndex(3) + inc).scaleIndex - scaleFor(tokensForIndex(3)).scaleIndex
+  assert.equal(early, later, `linear: equal increments buy equal levels (${early} vs ${later})`)
 })
 
 test('named ladder Hamlet→Megastructure maps exactly', () => {
@@ -33,13 +32,14 @@ test('named ladder Hamlet→Megastructure maps exactly', () => {
   }
 })
 
-test('procedural names past the ladder, with no upper bound', () => {
+test('scaleName is procedurally unbounded, but the build caps scale at the top tier', () => {
+  // scaleName itself handles any index (only reachable past the cap via the act lever)
   assert.equal(scaleName(8), 'Megastructure 2')
   assert.equal(scaleName(9), 'Megastructure 3')
-  const at20 = scaleFor(tokensForIndex(20))
-  assert.equal(at20.scaleIndex, 20)
-  assert.equal(at20.scaleName, 'Megastructure 14')
-  assert.equal(scaleFor(tokensForIndex(50)).scaleIndex, 50) // no top
+  assert.equal(scaleName(20), 'Megastructure 14')
+  // but buildProgress caps at 1.0, so cumulative burn alone never climbs past the top tier
+  assert.equal(scaleFor(BUILD.tokenCap).scaleIndex, BUILD.topIndex)
+  assert.equal(scaleFor(BUILD.tokenCap * 100).scaleIndex, BUILD.topIndex, 'burn past the cap does not climb further')
 })
 
 test('underground opens at Metropolis (index 4) and grows thereafter', () => {

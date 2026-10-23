@@ -4,19 +4,18 @@ import { step } from '../src/sim/condition.js'
 import { advance } from '../src/tick.js'
 import { initState } from '../src/state.js'
 import { cityData } from '../src/artifact.js'
-import { SINGULARITY } from '../src/tuning.js'
 
 const DAY = 86_400_000
 const base = Date.parse('2026-01-01T00:00:00.000Z')
 const iso = (d) => new Date(base + d * DAY).toISOString()
 
-// A built-up Metropolis (peak 4) so the raze is visible.
+// A built-up Metropolis (peak 4) so the raze is visible — built by burn (no day passed → pure-token meter).
 function metropolis() {
   let sim = step({}, { builtTokens: 0, burn24h: 0, burn7d: 0, day: 1 }, iso(0))
   let built = 0
   for (let d = 1; d <= 4; d++) {
-    built += 40_000_000
-    sim = step(sim, { builtTokens: built, burn24h: 40e6, burn7d: built, day: d }, iso(d))
+    built += 150_000_000 // → 600M, scale 4, but under the 1B / 30-day Singularity meter
+    sim = step(sim, { builtTokens: built, burn24h: 150e6, burn7d: built, day: d }, iso(d))
   }
   return { sim, built }
 }
@@ -28,21 +27,21 @@ test('era defaults to build; a step with no day stays in build (backward-compati
   assert.equal(s.singularityAt, null)
 })
 
-test('Day 60: build → ascendant — the city flares to its gleaming peak', () => {
+test('the meter tops out (30-day horizon) → build → ascendant — the city flares to its gleaming peak', () => {
   const { sim } = metropolis()
-  const asc = step(sim, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: SINGULARITY.ascendDay }, iso(60))
+  const asc = step(sim, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: 31 }, iso(30)) // 30 elapsed days → meter = 1
   assert.equal(asc.era, 'ascendant')
   assert.equal(asc.condition, 'Thriving')
   assert.equal(asc.vitality, 1)
   assert.equal(asc.ruinProgress, 0)
   assert.equal(asc.scaleIndex, asc.peakScaleIndex, 'ascended to full peak')
-  assert.equal(asc.singularityAt, iso(60))
+  assert.equal(asc.singularityAt, iso(30))
 })
 
-test('Day 61: ascendant → fallout — the city is razed to a wasteland', () => {
+test('after the hold: ascendant → fallout — the city is razed to a wasteland', () => {
   const { sim } = metropolis()
-  const asc = step(sim, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: 60 }, iso(60))
-  const fall = step(asc, { builtTokens: asc.builtTokens, burn24h: 0, burn7d: 0, day: 61 }, iso(61))
+  const asc = step(sim, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: 31 }, iso(30))
+  const fall = step(asc, { builtTokens: asc.builtTokens, burn24h: 0, burn7d: 0, day: 32 }, iso(31)) // holdDays (1) later
   assert.equal(fall.era, 'fallout')
   assert.equal(fall.scaleIndex, 0)
   assert.equal(fall.peakScaleIndex, 4, 'the ruined-metropolis bones remain')
@@ -50,13 +49,15 @@ test('Day 61: ascendant → fallout — the city is razed to a wasteland', () =>
   assert.equal(fall.vitality, 0)
   assert.equal(fall.condition, 'Buried')
   assert.equal(fall.recovery, 0)
-  assert.equal(fall.singularityAt, iso(60), 'keeps the ascension timestamp through the fall')
+  assert.equal(fall.singularityAt, iso(30), 'keeps the ascension timestamp through the fall')
 })
 
-test('a single tick that jumps past both days goes straight to fallout (catch-up)', () => {
+test('the meter topping out ascends; the fall is HELD for a later tick (not same-tick catch-up)', () => {
   const { sim } = metropolis()
-  const fall = step(sim, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: 65 }, iso(65))
-  assert.equal(fall.era, 'fallout')
+  const asc = step(sim, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: 40 }, iso(39)) // meter long past 1
+  assert.equal(asc.era, 'ascendant', 'a single tick ascends — not straight to fallout')
+  const fall = step(asc, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: 41 }, iso(40)) // one hold-day on
+  assert.equal(fall.era, 'fallout', 'the fall lands on the next tick, after the hold')
   assert.equal(fall.scaleIndex, 0)
 })
 
@@ -101,20 +102,23 @@ test('advance: Day 61 chronicles the Downfall + flips to fallout', () => {
   assert.equal(state.climax.phase, 'fall')
 })
 
-test('advance: a jump past both days chronicles Singularity AND Downfall, climax = fall', () => {
+test('advance: a catch-up jump ascends (climax = ascension); the Downfall lands on a later tick', () => {
   let state = grown()
-  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(70) }, iso(70)) // day 71
-  assert.equal(state.sim.era, 'fallout')
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(70) }, iso(70)) // day 71: meter tops out → ascend
+  assert.equal(state.sim.era, 'ascendant')
   assert.ok(state.history.some((e) => e.type === 'singularity'))
+  assert.equal(state.climax.phase, 'ascension')
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(72) }, iso(72)) // one hold-day on → fall
+  assert.equal(state.sim.era, 'fallout')
   assert.ok(state.history.some((e) => e.type === 'downfall'))
   assert.equal(state.climax.phase, 'fall')
 })
 
-test('on a catch-up jump the climax stays the newest chronicle entry (not buried by the gift backlog)', () => {
+test('on a catch-up jump the climax (ascension) stays the newest chronicle entry (not buried by the gift backlog)', () => {
   let state = grown()
-  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(70) }, iso(70)) // day 71: both climaxes + all 59 gifts in one tick
-  assert.equal(state.history[0].type, 'downfall', 'the Downfall headlines the chronicle')
-  assert.ok(state.history.some((e) => e.type === 'singularity'), 'the Singularity survives the 60-entry cap')
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(70) }, iso(70)) // day 71: ascension + all 59 gifts in one tick
+  assert.equal(state.history[0].type, 'singularity', 'the Singularity headlines the chronicle')
+  assert.ok(state.history.some((e) => e.type === 'gift'), 'the gift backlog is chronicled too, below the climax')
 })
 
 test('cityData: era snaps the theme and reframes the fallout readout', () => {

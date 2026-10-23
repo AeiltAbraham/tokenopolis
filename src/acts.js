@@ -10,7 +10,7 @@
 // The deck is drawn without replacement: every one of the 50 occurs exactly once before any repeats,
 // then the used list clears and the deck is whole again.
 
-import { SCALE, INFECTION } from './tuning.js'
+import { BUILD, INFECTION } from './tuning.js'
 import { step, effectiveBuilt } from './sim/condition.js'
 
 export const COOLDOWN_MS = 60 * 60 * 1000 // one act per hour
@@ -147,7 +147,7 @@ export function drawChoice(usedIds, rng) {
 // Pure: builtTokens is untouched (an act is not "burn"), so the decay clock does not reset.
 export function applyAct(state, act, usedIds, nowIso) {
   const sim = state.sim
-  const reference = Math.max(effectiveBuilt(sim), SCALE.baseTokens) // floor so even a tiny city feels it
+  const reference = Math.max(effectiveBuilt(sim), BUILD.tokenCap / 100) // floor (~1% of a full city) so even a tiny city feels an act
   let rawDelta = Math.round(reference * act.mag)
   let actTokens = (sim.actTokens ?? 0) + rawDelta
   // Floor: the lever can shrink the city, but never below an empty lot.

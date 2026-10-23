@@ -3,8 +3,6 @@
 // without breaking a single test. Each constant carries a one-line note on what it controls.
 
 export const SCALE = {
-  baseTokens: 1_000_000, // burn to take the FIRST step up (Hamlet→Village); smaller = faster early delight
-  growth: 5, // each step up costs this many × the previous step (front-loaded/log feel); bigger = rarer milestones
   undergroundFromIndex: 4, // scale index at which the underground frontier opens (Metropolis)
 }
 
@@ -19,6 +17,14 @@ export const SCALE_NAMES = [
   'Arcology', // 6
   'Megastructure', // 7
 ]
+
+// The linear build arc. The city climbs at a STEADY pace to its top tier — reaching max, and the
+// Singularity, at whichever comes first: a token budget or a day horizon (calibrated to be equivalent).
+export const BUILD = {
+  tokenCap: 1_000_000_000, // tokens that fully build the city (≈ the Singularity by burn) — 1 billion
+  dayCap: 30, // elapsed days that fully build the city (≈ the Singularity by time) — whichever hits 1.0 first
+  topIndex: SCALE_NAMES.length - 1, // scale index at full build (buildProgress 1.0) → Megastructure
+}
 
 export const ECONOMY = {
   popBase: 12, // people in a brand-new hamlet at zero burn (keeps a village from reading as empty)
@@ -58,10 +64,11 @@ export const INFECTION = {
   economyDrop: 0.6, // at full severity, population + economy fall to (1 − this) of normal
 }
 
-// The Day-60 Singularity → Fallout arc. The gift catalog covers Days 1..59; Day 60 is the climax.
+// The Singularity → Fallout arc. The climax fires when the per-cycle build meter tops out (BUILD: 1B
+// tokens or 30 days, whichever first) — not on a fixed calendar day — then holds at peak for `holdDays`
+// before the nuclear fall razes the city and the era flips to 'fallout'.
 export const SINGULARITY = {
-  ascendDay: 60, // first day the city ascends — "AI Reached Consciousness" (the gleaming revamp)
-  fallDay: 61, // the nuclear downfall lands — the city is razed and the era flips to 'fallout'
+  holdDays: 1, // elapsed days the ascension is held at its gleaming peak before the fall
 }
 
 // The Fallout flip: the decay clock run backwards. In 'fallout', idleness HEALS (recovery 0→1 over

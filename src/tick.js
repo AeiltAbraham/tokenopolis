@@ -20,10 +20,12 @@ import { notifyAchievements } from './notify.js'
 export function advance(prev, stats, now, claudeDelta = 0) {
   const afterStats = applyStatsRead(prev, stats, claudeDelta) // cornercase + Claude → monotonic builtTokens
   const cycleStart = prev.cycleStartAt ?? prev.install?.installedAt // the current cycle's anchor (resets on rebirth)
-  const day = dayOf(cycleStart, now) // days since the cycle began — drives gifts AND the Singularity
+  const day = dayOf(cycleStart, now) // days since the cycle began — drives gifts AND the per-cycle Singularity meter
+  const lifetimeDay = dayOf(prev.install?.installedAt ?? cycleStart, now) // days since install — drives the city's size (maturity)
+  const cycleStartTokens = prev.cycleStartTokens ?? 0 // the cycle's burn baseline (resets on rebirth) — the meter's token axis
   const newSim = step(
     prev.sim, // PRIOR sim — so the delta is visible
-    { builtTokens: afterStats.sim.builtTokens, burn24h: afterStats.stats.burn24h, burn7d: afterStats.stats.burn7d, day },
+    { builtTokens: afterStats.sim.builtTokens, burn24h: afterStats.stats.burn24h, burn7d: afterStats.stats.burn7d, day, lifetimeDay, cycleStartTokens },
     now,
   )
   let history = prev.history ?? []
@@ -63,8 +65,10 @@ export function advance(prev, stats, now, claudeDelta = 0) {
   // Rebirth re-arms the calendar — earned gifts persist as blueprints and their daily banners replay.
   let gifts = prev.gifts ?? defaultGifts()
   let cycleStartAt = prev.cycleStartAt ?? null
+  let cycleStartTokensNext = prev.cycleStartTokens ?? 0
   if (rebirthHappened) {
     cycleStartAt = now
+    cycleStartTokensNext = afterStats.sim.builtTokens // the new cycle's burn baseline — the Singularity meter restarts
     gifts = { ...gifts, claimedThroughDay: 0 }
   } else {
     const claim = claimGiftsUpTo(gifts, day)
@@ -91,7 +95,7 @@ export function advance(prev, stats, now, claudeDelta = 0) {
     if (line) history = appendEvent(history, { at: now, type: 'vignette', label: line, line })
   }
   const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
-  return { ...afterStats, sim: newSim, history, progress, gifts, pyromid, climax, cycleStartAt }
+  return { ...afterStats, sim: newSim, history, progress, gifts, pyromid, climax, cycleStartAt, cycleStartTokens: cycleStartTokensNext }
 }
 
 export function tick(deps, now) {
@@ -115,7 +119,8 @@ export function tick(deps, now) {
     JSON.stringify(prev.gifts ?? {}) !== JSON.stringify(next.gifts ?? {}) ||
     JSON.stringify(prev.pyromid ?? {}) !== JSON.stringify(next.pyromid ?? {}) ||
     JSON.stringify(prev.climax ?? null) !== JSON.stringify(next.climax ?? null) ||
-    (prev.cycleStartAt ?? null) !== (next.cycleStartAt ?? null)
+    (prev.cycleStartAt ?? null) !== (next.cycleStartAt ?? null) ||
+    (prev.cycleStartTokens ?? 0) !== (next.cycleStartTokens ?? 0)
   if (!changed) return { changed: false, state: prev }
 
   const rendered = { ...next, render: { ...next.render, lastRenderedAt: now } }

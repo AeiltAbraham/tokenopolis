@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { CONDITIONS } from '../src/tuning.js'
+import { CONDITIONS, DECAY } from '../src/tuning.js'
 import { step, conditionIndexFor } from '../src/sim/condition.js'
 import { tokensForIndex } from '../src/sim/scale.js'
 
@@ -20,13 +20,16 @@ const FRESH = {
   recoveryCredit: 0,
 }
 
-// Build up to a Metropolis (index 4 needs tokensForIndex(4) = 125M) over days 1..4, ~35M/day.
+// Build up to a Metropolis (index 4 needs tokensForIndex(4)) over days 1..4. No `day` is passed, so the
+// build meter is pure-token here — scale is token-driven for these decay/recovery unit tests.
 function buildToMetropolis() {
   let sim = FRESH
+  const target = tokensForIndex(4)
+  const perDay = Math.ceil(target / 4)
   let built = 0
   for (let day = 1; day <= 4; day++) {
-    built += 35_000_000
-    sim = step(sim, { builtTokens: built, burn24h: 35_000_000, burn7d: built }, iso(day))
+    built = Math.min(target, built + perDay)
+    sim = step(sim, { builtTokens: built, burn24h: perDay, burn7d: built }, iso(day))
   }
   return { sim, built, lastBurnDay: 4 }
 }
@@ -78,8 +81,8 @@ test('condition degrades BEFORE scale regresses (Ruins reached while scale still
   assert.ok(deeper.scaleIndex < deeper.peakScaleIndex)
 })
 
-test('recovery from ruins restores scale to peak using ≤ 1/5 of the original climb cost', () => {
-  const { sim, built } = buildToMetropolis() // peak 4, built = 140M
+test('recovery from ruins restores scale to peak using ≈ 1/recoveryFactor of the original climb cost', () => {
+  const { sim, built } = buildToMetropolis() // peak 4
   // Idle 12 days → Ruins + 2 levels collapsed (effective 2).
   const ruined = step(sim, { builtTokens: built, burn24h: 0, burn7d: 0 }, iso(4 + 12))
   assert.equal(ruined.peakScaleIndex, 4)
@@ -87,21 +90,22 @@ test('recovery from ruins restores scale to peak using ≤ 1/5 of the original c
   assert.equal(ruined.scaleIndex, 2)
 
   // Original first-climb cost of the two collapsed levels (index 2→4):
-  const originalClimb = tokensForIndex(4) - tokensForIndex(2) // 125M - 5M = 120M
+  const originalClimb = tokensForIndex(4) - tokensForIndex(2)
   // Resume burning in 1M chunks (each meaningful); count tokens until effective scale is back to peak.
   let s = ruined
   let recoveryTokens = 0
   let b = built
   let day = 4 + 12
-  for (let i = 0; i < 200 && s.scaleIndex < s.peakScaleIndex; i++) {
+  for (let i = 0; i < 2000 && s.scaleIndex < s.peakScaleIndex; i++) {
     b += 1_000_000
     recoveryTokens += 1_000_000
     day += 0.01 // same "recovering" window; keeps daysSinceBurn ~0
     s = step(s, { builtTokens: b, burn24h: 1_000_000, burn7d: 1_000_000 }, iso(day))
   }
   assert.equal(s.scaleIndex, s.peakScaleIndex, 'recovery should reach peak')
-  assert.ok(recoveryTokens <= originalClimb / 5, `recovery cost ${recoveryTokens} must be ≤ 1/5 of ${originalClimb}`)
-  assert.ok(recoveryTokens < originalClimb / 4, 'recovery must be dramatically cheaper than the first climb')
+  // ≈ 1/recoveryFactor of the first climb, plus up to ~1 chunk of overshoot per reclaimed level.
+  assert.ok(recoveryTokens <= originalClimb / DECAY.recoveryFactor + 2_000_000, `recovery ${recoveryTokens} ≈ 1/${DECAY.recoveryFactor} of ${originalClimb}`)
+  assert.ok(recoveryTokens < originalClimb / 2, 'recovery must be dramatically cheaper than the first climb')
 
   // Beyond peak: growth proceeds at the NORMAL rate (index 5 needs tokensForIndex(5) of builtTokens).
   const beyond = step(s, { builtTokens: tokensForIndex(5), burn24h: 1, burn7d: 1 }, iso(day + 0.01))

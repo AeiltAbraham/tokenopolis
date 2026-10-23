@@ -15,21 +15,24 @@ function metropolis() {
   let sim = step({}, { builtTokens: 0, burn24h: 0, burn7d: 0, day: 1 }, iso(0))
   let built = 0
   for (let d = 1; d <= 4; d++) {
-    built += 40_000_000
-    sim = step(sim, { builtTokens: built, burn24h: 40e6, burn7d: built, day: d }, iso(d))
+    built += 150_000_000 // → 600M, scale 4 (built by burn)
+    sim = step(sim, { builtTokens: built, burn24h: 150e6, burn7d: built, day: d }, iso(d))
   }
   return { sim, built }
 }
+// Ascend when the meter tops out (30 elapsed days), then fall after the hold → razed (fallout, recovery 0, at iso(31)).
 const fallenSim = () => {
-  const { sim } = metropolis()
-  return step(sim, { builtTokens: sim.builtTokens, burn24h: 0, burn7d: 0, day: 61 }, iso(61)) // razed, recovery 0
+  const { sim, built } = metropolis()
+  const asc = step(sim, { builtTokens: built, burn24h: 0, burn7d: 0, day: 31 }, iso(30))
+  return step(asc, { builtTokens: built, burn24h: 0, burn7d: 0, day: 32 }, iso(31))
 }
 
-// Reach the fallout era through advance() (a build→fallout catch-up jump), gifts all claimed.
+// Reach the fallout era through advance(): a catch-up jump ascends (+ all 59 gifts), then a hold-day later falls (at iso(71)).
 function toFallout() {
   let state = initState({ baselineLifetimeTokens: 0, installedAt: iso(0), citySeed: 1 })
   state = advance(state, { lifetimeTotal: 160e6, burn24h: 40e6, burn7d: 160e6, readAt: iso(4) }, iso(4))
-  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(70) }, iso(70)) // day 71 → fallout
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(70) }, iso(70)) // day 71 → ascend + all gifts
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(71) }, iso(71)) // hold-day → fall
   return state
 }
 
@@ -38,7 +41,7 @@ test('fallout: idleness heals — recovery rises with idle time, the city rebuil
   assert.equal(fall.recovery, 0)
   assert.equal(fall.scaleIndex, 0)
   // Half of healDays (5 of 10) idle later → ~50% recovered, city partway rebuilt, life returning.
-  const healing = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 61 + RECOVERY.healDays / 2 }, iso(61 + RECOVERY.healDays / 2))
+  const healing = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 36 }, iso(31 + RECOVERY.healDays / 2))
   assert.equal(healing.era, 'fallout')
   assert.ok(healing.recovery > 0.4 && healing.recovery < 0.6, `~50% recovered, got ${healing.recovery}`)
   assert.ok(healing.scaleIndex > 0 && healing.scaleIndex < healing.peakScaleIndex, 'partway rebuilt')
@@ -47,9 +50,9 @@ test('fallout: idleness heals — recovery rises with idle time, the city rebuil
 
 test('fallout: burning is a setback — a meaningful burn resets recovery', () => {
   const fall = fallenSim()
-  const healing = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 66 }, iso(66))
+  const healing = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 36 }, iso(36))
   assert.ok(healing.recovery > 0.4, 'recovered partway while idle')
-  const setback = step(healing, { builtTokens: healing.builtTokens + 1_000_000, burn24h: 1e6, burn7d: 1e6, day: 66 }, iso(66))
+  const setback = step(healing, { builtTokens: healing.builtTokens + 1_000_000, burn24h: 1e6, burn7d: 1e6, day: 36 }, iso(36))
   assert.equal(setback.era, 'fallout')
   assert.equal(setback.recovery, 0, 'burning wipes the recovery progress')
   assert.equal(setback.scaleIndex, 0, 'and the wasteland falls back to rubble')
@@ -57,7 +60,7 @@ test('fallout: burning is a setback — a meaningful burn resets recovery', () =
 
 test('fallout: at 100% recovery the city is reborn — era flips back to build, fresh and thriving', () => {
   const fall = fallenSim()
-  const reborn = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 61 + RECOVERY.healDays }, iso(61 + RECOVERY.healDays))
+  const reborn = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 41 }, iso(31 + RECOVERY.healDays))
   assert.equal(reborn.era, 'build', 'the era loops back to build')
   assert.equal(reborn.recovery, 0)
   assert.equal(reborn.condition, 'Thriving')
@@ -70,8 +73,8 @@ test('fallout: at 100% recovery the city is reborn — era flips back to build, 
 
 test('fallout step is deterministic while healing', () => {
   const fall = fallenSim()
-  const a = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 66 }, iso(66))
-  const b = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 66 }, iso(66))
+  const a = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 36 }, iso(36))
+  const b = step(fall, { builtTokens: fall.builtTokens, burn24h: 0, burn7d: 0, day: 36 }, iso(36))
   assert.deepEqual(a, b)
 })
 
@@ -95,28 +98,28 @@ test('advance: rebirth chronicles it, re-arms the gift calendar, and resets the 
   let state = toFallout()
   assert.equal(state.sim.era, 'fallout')
   assert.equal(Object.keys(state.gifts.unlocked).length, 59, 'all gifts earned before the fall')
-  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(80) }, iso(80)) // 10 idle days after the fall → rebirth
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(81) }, iso(81)) // 10 idle days after the fall (iso71) → rebirth
   assert.equal(state.sim.era, 'build', 'reborn into a new build cycle')
   assert.equal(state.history[0].type, 'rebirth', 'the rebirth headlines the chronicle')
   assert.equal(state.climax.phase, 'rebirth')
-  assert.equal(state.cycleStartAt, iso(80), 'the cycle anchor resets to the rebirth moment')
+  assert.equal(state.cycleStartAt, iso(81), 'the cycle anchor resets to the rebirth moment')
   assert.equal(state.gifts.claimedThroughDay, 0, 'the gift calendar re-arms')
   assert.equal(Object.keys(state.gifts.unlocked).length, 59, 'earned gifts persist as blueprints')
 })
 
-test('advance: the arc loops — after rebirth the new cycle ascends again at its own Day 60', () => {
+test('advance: the arc loops — after rebirth the new cycle ascends again at its own 30-day horizon', () => {
   let state = toFallout()
-  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(80) }, iso(80)) // rebirth; cycle anchor = iso(80)
-  // Day 60 of the NEW cycle (iso(80) + 59 days).
-  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(139) }, iso(139))
-  assert.equal(dayOf(state.cycleStartAt, iso(139)), 60, 'the second cycle reaches its own Day 60')
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(81) }, iso(81)) // rebirth; cycle anchor = iso(81)
+  // 30 elapsed days into the NEW cycle (iso(81) + 30).
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(111) }, iso(111))
+  assert.equal(dayOf(state.cycleStartAt, iso(111)), 31, 'the second cycle reaches its own 30-day horizon (day 31)')
   assert.equal(state.sim.era, 'ascendant', 'and ascends again — the loop closes')
 })
 
 test('cityData: the fallout readout tracks recovery (survivors return as it heals)', () => {
   const cfg = { cityName: 'X', theme: 'coastal', flag: '', districts: { tech: 'T', ops: 'O' } }
   let state = toFallout()
-  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(75) }, iso(75)) // ~50% recovered
+  state = advance(state, { lifetimeTotal: 160e6, burn24h: 0, burn7d: 0, readAt: iso(76) }, iso(76)) // ~50% recovered (fall at iso71)
   const d = cityData(state, cfg)
   assert.equal(d.era, 'fallout')
   assert.ok(d.recovery > 0.4 && d.recovery < 0.6, `~50%, got ${d.recovery}`)

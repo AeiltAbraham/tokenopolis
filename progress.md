@@ -497,3 +497,35 @@ silhouettes); a real-git-seeded 3-city roster baked into a 119 KB artifact (≤3
 with active dots, ⚡/☢️ badges, "near Lyon", and Keesville/Maraton/Wrenn Hollow on the horizon.
 Adversarial review (workflow won2xl9py, 16 agents, 4 lenses × skeptics) → **12 raw, 0 confirmed** — all refuted
 (hypothetical / pre-existing / intended redesign / immaterial for a single-user toy). Version → 1.9.0.
+
+## 2026-10-23 — Linear build pacing: the 1B-token / 30-day Singularity (v1.10.0)
+
+Replaced the front-loaded growth ("quick build then slowdown") + fixed Day-60 Singularity with a **linear build to
+a defined max**, reached at **whichever comes first: 1 billion tokens or 30 elapsed days** (user-chosen cap; the
+two are calibrated so a ~33M/day burner's token budget and the day horizon coincide). Approved model:
+`buildProgress = min(1, max(tokens/1B, days/30))`.
+- **`tuning.js`:** dropped `SCALE.baseTokens`/`growth` (the geometric ladder); added `BUILD {tokenCap 1e9, dayCap
+  30, topIndex 7}`; `SINGULARITY` → `{holdDays 1}` (ascend holds a day before the fall) in place of ascendDay/fallDay.
+- **`src/sim/scale.js`:** `buildProgress(tokens, daysElapsed)` (max of the two axes, capped) + `scaleFromBuild(p)`
+  (LINEAR map 0→topIndex); `tokensForIndex` is now a uniform slice (tokenCap/topIndex); `scaleFor` delegates, caps
+  at the top tier.
+- **`src/sim/condition.js`:** `step()` takes `day`, `lifetimeDay`, `cycleStartTokens`. **Size** = lifetime meter
+  `scaleFromBuild(buildProgress(eff, lifetimeDays))` (acts feed the token term) → the FIRST climb is linear and a
+  reborn city stays grand (economy coherent). **Singularity** = per-cycle meter `buildProgress(realCycleTokens,
+  cycleDays) >= 1` (real burn only — a boon can't trigger it), holds `holdDays`, then falls.
+- **`src/tick.js`:** `advance()` adds the per-cycle `cycleStartTokens` baseline (resets to current burn on rebirth,
+  alongside the existing `cycleStartAt`), and passes `lifetimeDay`. The meter restarts each cycle.
+- **`src/acts.js`:** the act reference floor `SCALE.baseTokens` → `BUILD.tokenCap/100` (the removed constant).
+
+**Scoped decisions (flagged, not silently chosen):** reborn cities stay grand (lifetime size meter, not per-cycle);
+the climax is real-burn-only; gifts 31–59 now outlast the 30-day cycle (catalogue left at 59 — trim to ~30 later);
+a *mature* city's disasters stop shrinking scale (still hit economy + banner); the open-ended "Megastructure N" tail
+is gone (caps at Megastructure). Restarting re-paces existing cities under the new model (expected).
+
+**212/212** (+4 new guards: linear scale, meter = max(both axes), dual-axis Singularity whichever-first, per-cycle
+reset). **Mutation-checked** (all RED→revert): scaleFromBuild squared → linear RED; buildProgress max→min → meter +
+dual-axis RED; no cycle-reset → per-cycle-reset RED; drop recovery divisor → guard 3b + recovery RED (the two
+recovery guards were rewritten for the linear cost and re-verified). Rewrote the day-60/ladder assertions across
+sim-scale / sim-condition / singularity / fallout / invariants / tick (user-approved). **Verified** by sim-trace:
+a light 20M/day burner climbs linearly 0→7 by day 30 then ascends; a heavy 60M/day burner hits 1B ~day 16 and
+ascends early. Version → 1.10.0.
