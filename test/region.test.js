@@ -4,8 +4,9 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cityPostcard, syncRegion, clampPostcard, __resetRegionForTest } from '../src/region.js'
+import { cityPostcard, syncRegion, clampPostcard, regionHeadlines, __resetRegionForTest } from '../src/region.js'
 import { readConfig } from '../src/config.js'
+import { summarize } from '../src/history.js'
 
 const mock = (over = {}) => ({
   readout: { cityName: 'Aertville', locationCity: 'Motril', scaleName: 'Township', population: 42000, vitality: 0.9, economyRating: 1234, condition: 'Thriving' },
@@ -46,6 +47,31 @@ test('clampPostcard: caps every field + drops extras (an untrusted neighbour can
   assert.ok(c.population <= 1e12, 'population bounded')
   assert.equal(clampPostcard({ handle: '!!!' }), null, 'an all-invalid handle → null')
   assert.equal(clampPostcard(null), null)
+})
+
+test('regionHeadlines: milestone transitions become 🗞️ dispatches; the first sync (empty prev) stays silent', () => {
+  const at = '2026-10-23T00:00:00.000Z'
+  // first sync: prev empty → nothing (no "everyone just joined" spam the moment a keeper connects)
+  assert.deepEqual(regionHeadlines([], [{ handle: 'kees', cityName: 'Keesville', era: 'ascendant', scaleIndex: 5 }], at), [])
+  const prev = [{ handle: 'kees', cityName: 'Keesville', era: 'build', scaleIndex: 4, pyromidPct: 40 }]
+  const asc = regionHeadlines(prev, [{ handle: 'kees', cityName: 'Keesville', era: 'ascendant', scaleIndex: 4, pyromidPct: 40 }], at)
+  assert.equal(asc.length, 1)
+  assert.equal(asc[0].line, 'Keesville reached the Singularity')
+  assert.equal(asc[0].type, 'vignette', "region dispatches use the 'vignette' type → the 🗞️ icon, not counted in the player tally")
+  assert.equal(asc[0].at, at)
+  assert.equal(regionHeadlines(prev, [{ handle: 'kees', cityName: 'Keesville', era: 'fallout', scaleIndex: 4 }], at)[0].line, 'Keesville fell to ruin')
+  assert.equal(regionHeadlines(prev, [{ handle: 'kees', cityName: 'Keesville', era: 'build', scaleIndex: 5, scaleName: 'Metropolis', pyromidPct: 40 }], at)[0].line, 'Keesville grew to Metropolis')
+  assert.equal(regionHeadlines(prev, [{ handle: 'kees', cityName: 'Keesville', era: 'build', scaleIndex: 4, pyromidPct: 100 }], at)[0].line, 'Keesville completed its Pyromid')
+  assert.equal(regionHeadlines(prev, [...prev, { handle: 'mara', cityName: 'Maraton', era: 'build', scaleIndex: 1 }], at)[0].line, 'Maraton joined the region')
+  assert.deepEqual(regionHeadlines(prev, prev, at), [], 'a roster with no change produces no news')
+})
+
+test('regionHeadlines: capped per sync, and never inflate the player act/disaster tally', () => {
+  const prev = Array.from({ length: 6 }, (_, i) => ({ handle: 'h' + i, cityName: 'C' + i, era: 'build', scaleIndex: 1 }))
+  const next = prev.map((c) => ({ ...c, era: 'ascendant' })) // six neighbour singularities at once
+  const got = regionHeadlines(prev, next, 'x')
+  assert.equal(got.length, 3, 'a big sync is capped so it cannot flood the chronicle')
+  assert.deepEqual(summarize(got), { acts: 0, disasters: 0, milestones: 0, legendaries: 0 }, 'neighbour news is not the player’s own tally')
 })
 
 test('config: a valid region block parses; missing repo/handle → off; handle sanitised', () => {

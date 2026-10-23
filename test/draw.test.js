@@ -38,6 +38,21 @@ function recCtx() {
   }
 }
 
+// A text-aware recording ctx: the base stub captures only geometry, but neighbour labels need fillText/font.
+function txtCtx() {
+  const c = recCtx()
+  c.texts = []
+  c.fillText = (t, x, y) => c.texts.push([t, round(x), round(y)])
+  c.measureText = () => ({ width: 40 })
+  return c
+}
+
+const GRAYSCALE = {
+  sky: '#808080', ground: '#707070', road: '#606060', roof: '#505050', window: '#f0f0f0',
+  damage: '#202020', rubble: '#505050', underground: '#303030', accent: '#a0a0a0',
+  zone: { R: '#909090', C: '#888888', I: '#808080', park: '#989898' },
+}
+
 const city = (over = {}) => ({ peakScaleIndex: 4, scaleIndex: 4, condition: 'Thriving', vitality: 1, ...over })
 const scene = (over, seed = 7) => sceneFor(city(over), seed)
 
@@ -151,6 +166,35 @@ test('infrastructure renders: roads as strokes, one accent pip per unlocked high
   const ctx0 = recCtx()
   drawCity(ctx0, scene({ peakScaleIndex: 0, scaleIndex: 0 }), 'temperate', 0)
   assert.equal(pips(ctx0), 0, 'a hamlet has no higher infra tiers yet')
+})
+
+test('region neighbours ring the horizon: a roster adds labelled silhouettes, still grayscale- and tick-safe', () => {
+  const s = scene()
+  const roster = [
+    { handle: 'kees', cityName: 'Keesville', scaleIndex: 5, sizeIndex: 6, population: 999000, era: 'build' },
+    { handle: 'mara', cityName: 'Maraton', scaleIndex: 2, sizeIndex: 2, population: 10000, era: 'build' },
+  ]
+  const withR = txtCtx()
+  const without = txtCtx()
+  drawCity(withR, s, 'temperate', 0, 0.5, roster)
+  drawCity(without, s, 'temperate', 0, 0.5, [])
+  assert.deepEqual(withR.texts.map((t) => t[0]), ['Keesville', 'Maraton'], 'each neighbour is labelled, roster order')
+  assert.equal(without.texts.length, 0, 'anonymous hamlets (no roster) carry no labels')
+  assert.ok(withR.ops.some((o) => o[0] === 'fillRect'), 'the neighbours draw silhouette bars')
+
+  // grayscale-safe: the neighbour geometry depends on seed + roster, never the palette
+  const g = txtCtx()
+  drawCity(g, s, GRAYSCALE, 0, 0.5, roster)
+  assert.deepEqual(withR.ops, g.ops, 'neighbour silhouette geometry is palette-independent')
+
+  // tick-safe: in a stale city the whole frame (horizon included) must hold still across ticks
+  const stale = scene({ vitality: 0, condition: 'Blighted' })
+  const st0 = txtCtx()
+  const st1 = txtCtx()
+  drawCity(st0, stale, 'temperate', 0, 0.5, roster)
+  drawCity(st1, stale, 'temperate', 10, 0.5, roster)
+  assert.deepEqual(st0.ops, st1.ops, 'horizon neighbours do not animate across ticks')
+  assert.deepEqual(st0.texts, st1.texts, 'neighbour labels hold still too')
 })
 
 test('service vehicles render only when the service gift is unlocked', () => {

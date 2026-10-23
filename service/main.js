@@ -10,7 +10,7 @@ import { loadState, saveState, initState, logLine } from '../src/state.js'
 import { writeArtifact, cityData } from '../src/artifact.js'
 import { readConfig } from '../src/config.js'
 import { refreshGeoWeather } from '../src/geoweather.js'
-import { cityPostcard, syncRegion } from '../src/region.js'
+import { cityPostcard, syncRegion, getCachedRegion, regionHeadlines } from '../src/region.js'
 import { tick } from '../src/tick.js'
 import { claudeProjectsDir, initClaudeOffsets, readClaudeDelta } from '../src/claude-stats.js'
 import { startCityServer } from '../src/server.js'
@@ -124,11 +124,22 @@ export function startService({
         logLine(dir, `region postcard error: ${e && e.message}`, nowIso)
         return
       }
+      const prevRoster = getCachedRegion() // snapshot BEFORE the sync replaces the cache (diff for headlines)
       syncRegion({ dir, repo: config.region.repo, handle: config.region.handle, postcard, branch: config.region.branch })
-        .then(() => {
+        .then((roster) => {
           try {
             const s2 = loadState(dir, nowIso)
-            if (s2) writeArtifact(s2, config, dir)
+            if (!s2) return
+            // A neighbour hitting a milestone since our last sync becomes a dated headline in the Times.
+            const headlines = regionHeadlines(prevRoster, roster, nowIso())
+            let next = s2
+            if (headlines.length) {
+              let history = s2.history ?? []
+              for (const ev of [...headlines].reverse()) history = appendEvent(history, ev) // reverse → highest-rank lands newest
+              next = { ...s2, history }
+              saveState(dir, next)
+            }
+            writeArtifact(next, config, dir) // rebuild either way so the fresh roster lands in the baked HTML
           } catch (e) {
             logLine(dir, `region rebuild error: ${e && e.message}`, nowIso)
           }

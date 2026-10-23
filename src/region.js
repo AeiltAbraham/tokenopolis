@@ -92,6 +92,34 @@ const parsePostcard = (txt) => {
   }
 }
 
+// Diff two region rosters → notable headlines for the Tokenopolis Times (a neighbour reached the
+// Singularity, fell to ruin, grew a tier, finished its Pyromid, or newly joined). PURE. Events use the
+// 'vignette' type — a 🗞️ dispatch, deliberately NOT counted in the player's own act/disaster tally
+// (summarize() ignores it) — and carry the headline as `line`. An empty `prev` (the first sync of a keeper
+// run) yields nothing: that roster is the baseline, not news. Capped so a big sync can't flood the log.
+export function regionHeadlines(prev, next, nowIso, cap = 3) {
+  if (!Array.isArray(prev) || !prev.length || !Array.isArray(next)) return []
+  const was = new Map(prev.map((c) => [c.handle, c]))
+  const out = []
+  const push = (line, rank) => out.push({ at: nowIso, type: 'vignette', label: line, line, rank })
+  for (const c of next) {
+    const name = c.cityName || c.handle || 'A city'
+    const p = was.get(c.handle)
+    if (!p) {
+      push(`${name} joined the region`, 1)
+      continue
+    }
+    if (c.era === 'ascendant' && p.era !== 'ascendant') push(`${name} reached the Singularity`, 4)
+    else if (c.era === 'fallout' && p.era !== 'fallout') push(`${name} fell to ruin`, 3)
+    else if ((c.scaleIndex ?? 0) > (p.scaleIndex ?? 0) && c.scaleName) push(`${name} grew to ${c.scaleName}`, 2)
+    if ((c.pyromidPct ?? 0) >= 100 && (p.pyromidPct ?? 0) < 100) push(`${name} completed its Pyromid`, 2)
+  }
+  return out
+    .sort((a, b) => b.rank - a.rank)
+    .slice(0, cap)
+    .map(({ rank, ...e }) => e)
+}
+
 // Publish our postcard and fetch the roster through the shared repo (cloned to <dir>/region-repo). We only
 // ever write cities/<handle>.json, so a push race just means re-sync + retry. NEVER throws; returns the
 // roster (minus ourselves) or the last good cache.

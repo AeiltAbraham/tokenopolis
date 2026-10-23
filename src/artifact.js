@@ -370,14 +370,10 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCache
       chronicle && chronicle.length ? chronicle.map((c) => `<li><span class="when">${esc(c.when)}</span>${esc(c.line)}</li>`).join('') : '<li class="muted">nothing yet — roll an act</li>'
     }</ul>
   </section>
-  ${
-    region && region.length
-      ? `<section class="panel">
-    <h2>The Region <span class="muted">${region.length} ${region.length === 1 ? 'city' : 'cities'}</span></h2>
-    <ul class="region" id="region">${regionRows(region)}</ul>
-  </section>`
-      : ''
-  }
+  <section class="panel" id="regionpanel"${region && region.length ? '' : ' hidden'}>
+    <h2>The Region <span class="muted" id="regioncount">${region ? region.length : 0} ${region && region.length === 1 ? 'city' : 'cities'}</span></h2>
+    <ul class="region" id="region">${region ? regionRows(region) : ''}</ul>
+  </section>
   <div class="theme" id="themecap">theme: ${esc(readout.theme)}</div>
 </aside>
 <script id="city-data" type="application/json">${dataJson}</script>
@@ -400,7 +396,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCache
     var tod = typeof timeOfDay === 'function' ? timeOfDay(localMs) : 0.5;
     var S = (canvas.width || LW) / LW; // backing-resolution factor: logical 960 → the hi-res canvas, through the zoom
     if (ctx.setTransform) ctx.setTransform(S * view.z, 0, 0, S * view.z, S * view.x, S * view.y);
-    drawCity(ctx, DATA.scene, DATA.theme, k, tod); // window lights + street activity follow the same clock as the sky
+    drawCity(ctx, DATA.scene, DATA.theme, k, tod, DATA.region || []); // window lights + street activity follow the same clock as the sky; the region's neighbours ring the horizon
     if (ctx.setTransform) ctx.setTransform(1, 0, 0, 1, 0, 0);
     // Living city: the sky + weather track the viewer's LOCAL clock (screen-space overlays).
     if (typeof drawDayNight === 'function') {
@@ -853,6 +849,31 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCache
   // ---- Live growth: poll /state and update the city + numbers in place (no reload) when served locally. ----
   function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
   function grp(n) { return String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); } // \\ — inside a template literal
+  // Rebuild the region leaderboard in-browser from the live roster (the keeper's regionRows isn't bundled
+  // here). Text nodes only — a neighbour's cityName/handle is untrusted data, never injected as markup.
+  function renderRegion(roster) {
+    var panel = document.getElementById('regionpanel'), ul = document.getElementById('region');
+    if (!panel || !ul) return;
+    var list = Array.isArray(roster) ? roster.slice() : [];
+    if (!list.length) { panel.hidden = true; ul.innerHTML = ''; return; }
+    panel.hidden = false;
+    list.sort(function (a, b) { return (b.population || 0) - (a.population || 0); });
+    var count = document.getElementById('regioncount');
+    if (count) count.textContent = list.length + ' ' + (list.length === 1 ? 'city' : 'cities');
+    ul.innerHTML = '';
+    list.forEach(function (c) {
+      var li = document.createElement('li');
+      var rn = document.createElement('span'); rn.className = 'rn';
+      if (c.active) { var dot = document.createElement('span'); dot.className = 'rdot'; rn.appendChild(dot); }
+      var badge = c.era === 'ascendant' ? ' ⚡' : c.era === 'fallout' ? ' ☢️' : '';
+      rn.appendChild(document.createTextNode((c.cityName || '') + badge + ' '));
+      var h = document.createElement('span'); h.className = 'muted'; h.textContent = '· ' + (c.handle || ''); rn.appendChild(h);
+      if (c.nearCity) { var n = document.createElement('span'); n.className = 'muted'; n.textContent = ' · near ' + c.nearCity; rn.appendChild(n); }
+      var rs = document.createElement('span'); rs.className = 'rs muted';
+      rs.textContent = (c.scaleName || '') + ' · ' + Math.round((c.vitality || 0) * 100) + '%';
+      li.appendChild(rn); li.appendChild(rs); ul.appendChild(li);
+    });
+  }
   function applyLive(s) {
     if (!s || !s.readout) return;
     // The keeper's location/weather cache is empty for the first few seconds of every (re)start, so /state
@@ -868,6 +889,7 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCache
       if (!s.chronicle.length) { var em = document.createElement('li'); em.className = 'muted'; em.textContent = 'nothing yet — roll an act'; chron.appendChild(em); }
       else s.chronicle.forEach(function (c) { var li = document.createElement('li'); var w = document.createElement('span'); w.className = 'when'; w.textContent = c.when || ''; li.appendChild(w); li.appendChild(document.createTextNode(c.line || '')); chron.appendChild(li); });
     }
+    if (Array.isArray(s.region)) { DATA.region = s.region; renderRegion(s.region); } // the horizon silhouettes + leaderboard follow the live roster
     if (typeof s.lastActAt !== 'undefined') DATA.lastActAt = s.lastActAt;
     // Keep the headline + tab title in sync with the resolved city — the "near <city>" suffix is otherwise
     // baked only at build time, so a tab opened before geolocation resolved would never gain it.

@@ -88,6 +88,43 @@ Themes: `temperate · coastal · desert · nordic · neon`. Missing or invalid v
 defaults. (The config path is assumed to be `$CORNERCASE_PLUGIN_CONFIG/config.json`; confirm against
 your cornercase version — see the owed hook/path probe noted in `progress.md`.)
 
+### The Region (optional — join a "country" with friends)
+
+Opt in and your city joins a shared "country": each keeper publishes a tiny **postcard** to a shared
+git repo and reads everyone else's back, so your friends' cities ring your horizon and climb a "The
+Region" leaderboard, and their milestones ("Keesville reached the Singularity") drop into your
+Tokenopolis Times. Off by default — add a `region` block to `config.json`:
+
+```json
+{
+  "cityName": "Aertville",
+  "region": {
+    "repo": "git@github.com:you/our-tokenopolis-country.git",
+    "handle": "aert",
+    "shareLocation": false
+  }
+}
+```
+
+| key | required | default | what it does |
+| --- | --- | --- | --- |
+| `repo` | **yes** | — | A git remote every member can push to (a private repo is fine). Create it once, empty, and share it with the group. |
+| `handle` | **yes** | — | Your short name in the country — the file you own is `cities/<handle>.json`. Sanitised to `A–Z a–z 0–9 _ -`, ≤24 chars. Pick a unique one per person. |
+| `shareLocation` | no | `false` | When `true`, your postcard includes your "near \<city\>" label so neighbours see roughly where you are. Leave `false` to stay anonymous. |
+| `branch` | no | `main` | The branch the roster lives on. |
+| `intervalMs` | no | `900000` (15 min) | How often to publish + re-read. Clamped to 1–60 min. |
+
+**How to set one up:** one person creates an empty git repo and gives everyone push access (the keeper
+uses your own `git` credentials — SSH or a credential helper; Tokenopolis never sees them). Each person
+adds the `region` block with the **same `repo`** and their **own unique `handle`**, then restarts the
+keeper (`cornercase plugin disable tokenopolis && cornercase plugin enable tokenopolis`).
+
+**Privacy:** only the postcard ever leaves your machine — city name, scale, population, vitality, era,
+Pyromid %, streak (and *only* a rough "near \<city\>" if you set `shareLocation`). Never your tokens,
+your event log, your IP, your file paths, or your OS user. A git/network hiccup never blocks the city —
+it just keeps the last good roster and carries on solo. A neighbour's postcard is clamped on read
+(every field size-capped, extras dropped), so a buggy or hostile member can't bloat or inject anything.
+
 ## State & reset
 
 City state lives in `$CORNERCASE_PLUGIN_STATE/` as `state.json` (plus the rendered `city.html` and

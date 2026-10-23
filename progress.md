@@ -464,3 +464,36 @@ non-default-branch e2e); (4) commit metadata leaked the OS user → anonymous `-
 Suite now 205/205. **v2 follow-ups (noted):** neighbour
 silhouettes on the horizon (replace the procedural distant towns), regional chronicle headlines (diff the
 roster → Times entries), live panel updates via applyLive, and a README setup section. Version → 1.8.0.
+
+## 2026-10-23 — The Region v2 follow-ups + bold-theme ground fix (v1.9.0)
+
+All five v2 follow-ups from the v1.8.0 note, in one pass ("All of them"):
+1. **Bold-theme ground desaturation** — `src/render/draw.js` now has a saturation-aware `desat`/`satOf`/`luma`
+   + `softGround(hex)` (desaturate in proportion to vividness, then warm toward cream), applied to the ground
+   plate + countryside fields/parcels. Cyberpunk/neon/crt grounds calm to soft sage; naturalistic themes
+   barely move (verified across all 6 themes in the gallery). Colour-only → grayscale-safe.
+2. **Neighbour silhouettes** — the region roster is passed into `drawCity(ctx, scene, theme, tick, tod, region=[])`
+   as a NON-scene render param (so grayscale/stale/determinism guards hold), threaded to `drawCountryside`,
+   where it replaces the procedural distant towns: up to 5 neighbours ring the horizon, sized by growth
+   (`sizeIndex`), labelled biggest-first, label-x clamped on-canvas. No roster → the anonymous hamlets as before.
+3. **Live region panel** — `src/artifact.js`: the "The Region" panel is now ALWAYS baked (`id="regionpanel"`,
+   `hidden` when empty); a browser-side `renderRegion()` rebuilds the leaderboard from `/state` (text nodes only
+   — untrusted neighbour data never injected as markup); `applyLive` sets `DATA.region` (refreshing the
+   silhouettes each rAF) + calls it. Bake path still uses `regionRows`; both agree.
+4. **Regional headlines** — `src/region.js` `regionHeadlines(prev, next, nowIso, cap=3)` (PURE): diffs two
+   rosters into 🗞️ `vignette`-type chronicle events (reached the Singularity / fell to ruin / grew to X /
+   completed its Pyromid / joined). Deliberately `vignette` so `summarize()` never counts neighbour news in the
+   player's own act/disaster tally. Empty `prev` (first sync) stays silent — no join-spam. `service/main.js`
+   snapshots `getCachedRegion()` before the sync, diffs, appends (reverse → highest-rank newest) + `saveState`,
+   then rebuilds.
+5. **README** — a "The Region" setup section: config table (repo/handle/shareLocation/branch/intervalMs),
+   how-to, and the privacy guarantees.
+
+Suite **208/208** (+3: `regionHeadlines` ×2, horizon-silhouette guard). **Mutation-checked:** (A) drop the
+empty-`prev` short-circuit → first-sync-silent assertion RED; (B) `vignette`→`singularity` → type + not-in-tally
+assertions RED; (C) make silhouette bar-spread palette-dependent → both the existing grayscale guard AND the new
+silhouette grayscale assertion RED; all reverted → green. **Verified:** gallery (6 themes, ground desat + labelled
+silhouettes); a real-git-seeded 3-city roster baked into a 119 KB artifact (≤300 KB) → leaderboard renders sorted
+with active dots, ⚡/☢️ badges, "near Lyon", and Keesville/Maraton/Wrenn Hollow on the horizon.
+Adversarial review (workflow won2xl9py, 16 agents, 4 lenses × skeptics) → **12 raw, 0 confirmed** — all refuted
+(hypothetical / pre-existing / intended redesign / immaterial for a single-user toy). Version → 1.9.0.

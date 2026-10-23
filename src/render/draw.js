@@ -66,6 +66,13 @@ function mix(a, b, t) {
 const pastel = (hex, t = 0.26) => mix(hex, '#f7ecd9', t)
 // A charming spread of soft pastels; each building picks one (seeded) for a varied storybook palette.
 const COZY = ['#e7a79f', '#e99bb1', '#a6cfc6', '#bfb0dd', '#efcf9a', '#93c3b4', '#e2b2cf', '#9db7df', '#f0b48c']
+// Pull a colour toward its own grey (desaturate), scaled by how vivid it already is — so a theme's neon
+// grounds (cyberpunk/neon/crt) calm right down while the naturalistic greens barely move.
+const luma = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
+const satOf = (hex) => { const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b); return mx === 0 ? 0 : (mx - mn) / mx }
+const desat = (hex, t) => { const l = Math.round(luma(hex)), g = '#' + ((l << 16) | (l << 8) | l).toString(16).padStart(6, '0'); return mix(hex, g, Math.max(0, Math.min(1, t))) }
+// Soft cozy ground: desaturate in proportion to vividness, then warm toward cream.
+const softGround = (hex, p = 0.3) => pastel(desat(hex, 0.75 * satOf(hex)), p)
 // District roof hue: Claude Code "tech" (cyan) vs cornercase-agent "ops/industry" (amber).
 const DISTRICT_HUE = { tech: '#39d0ff', ops: '#ffb347' }
 const isNight = (hex) => {
@@ -99,7 +106,7 @@ function vgrad(ctx, x0, y0, x1, y1, c0, c1) {
 export const LOGICAL_W = 960
 export const LOGICAL_H = 640
 
-export function drawCity(ctx, scene, theme, tick = 0, tod = 0.5) {
+export function drawCity(ctx, scene, theme, tick = 0, tod = 0.5, region = []) {
   const p = theme && typeof theme === 'object' ? theme : resolveTheme(theme)
   const W = LOGICAL_W
   const H = LOGICAL_H
@@ -139,11 +146,11 @@ export function drawCity(ctx, scene, theme, tick = 0, tod = 0.5) {
   const gcy = oy + span * (TILE_H / 2)
   const ghw = span * (TILE_W / 2) + TILE_W
   const ghh = span * (TILE_H / 2) + TILE_H
-  drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) // the landscape the city sits in: fields, forest, water, roads out, distant towns
-  ctx.fillStyle = shade(pastel(p.ground, 0.44), -22) // soft plate rim for depth
+  drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh, region) // the landscape the city sits in: fields, forest, water, roads out, distant towns (the region's neighbours when connected)
+  ctx.fillStyle = shade(softGround(p.ground), -22) // soft plate rim for depth
   diamond(ctx, ox, gcy + 6, ghw, ghh)
   ctx.fill()
-  ctx.fillStyle = vgrad(ctx, ox, gcy - ghh, ox, gcy + ghh, shade(pastel(p.ground, 0.44), 10), shade(pastel(p.ground, 0.44), -12))
+  ctx.fillStyle = vgrad(ctx, ox, gcy - ghh, ox, gcy + ghh, shade(softGround(p.ground), 10), shade(softGround(p.ground), -12))
   diamond(ctx, ox, gcy, ghw, ghh)
   ctx.fill()
 
@@ -389,14 +396,14 @@ function drawVehicles(ctx, scene, ox, oy, tick, stale) {
 // river, forest clusters, roads leading out, and a couple of distant towns on the horizon ("the space
 // between cities"). Deterministic (seeded by the city + position) and tick-independent (stale-safe); the
 // GEOMETRY never depends on the palette (grayscale guard), only the fill colours do. No ctx.ellipse.
-function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
+function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh, region = []) {
   const seed = (scene.seed >>> 0) || 0
   const sr = (a, b) => srnd(a + seed, b)
   const ew = ghw * 1.95, eh = ghh * 1.95
   const onPlate = (px, py) => Math.abs(px - ox) / ghw + Math.abs(py - gcy) / ghh < 1.04
 
   // broad surrounding fields
-  ctx.fillStyle = vgrad(ctx, ox, gcy - eh, ox, gcy + eh, shade(pastel(p.zone.park, 0.42), 6), shade(pastel(p.zone.park, 0.42), -16))
+  ctx.fillStyle = vgrad(ctx, ox, gcy - eh, ox, gcy + eh, shade(softGround(p.zone.park), 6), shade(softGround(p.zone.park), -16))
   diamond(ctx, ox, gcy + 5, ew, eh)
   ctx.fill()
 
@@ -406,7 +413,7 @@ function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
     const px = ox + Math.cos(ang) * ew * rad * 0.72
     const py = gcy + Math.sin(ang) * eh * rad * 0.72
     if (onPlate(px, py)) continue // clear of the plate
-    ctx.fillStyle = rgba(sr(i, 3) > 0.5 ? shade(pastel(p.zone.park, 0.42), 12) : shade(pastel(p.zone.park, 0.42), -10), 0.5)
+    ctx.fillStyle = rgba(sr(i, 3) > 0.5 ? shade(softGround(p.zone.park), 12) : shade(softGround(p.zone.park), -10), 0.5)
     diamond(ctx, px, py, 15 + a * 13, 8 + a * 6)
     ctx.fill()
   }
@@ -458,18 +465,45 @@ function drawCountryside(ctx, scene, p, ox, gcy, ghw, ghh) {
     ctx.stroke()
   }
 
-  // distant towns — tiny clusters on the horizon
-  for (let s = 0; s < 3; s++) {
-    const ang = (0.18 + s * 0.3) * Math.PI
-    const px = ox + Math.cos(ang) * ew * 0.9
-    const py = gcy - eh * (0.46 + sr(s, 29) * 0.28)
-    for (let k = 0; k < 5; k++) {
-      const bx = px + (sr(s * 5 + k, 31) - 0.5) * 26
-      const bh = 3 + Math.floor(sr(s * 5 + k, 37) * 6)
-      ctx.fillStyle = rgba(shade(pastel(p.roof, 0.3), -6), 0.5)
+  // distant towns on the horizon — the region's real neighbour cities when we're connected (sized by how
+  // far each has grown, labelled, biggest first), else a few anonymous hamlets so a solo city still has a
+  // skyline. Geometry depends only on seed + roster, never palette (grayscale-safe) or tick (holds still).
+  const towns = region.length
+    ? region.slice(0, 5).map((n, i) => ({
+        key: i,
+        mag: Math.min(1, ((Number(n.sizeIndex) || Number(n.scaleIndex) || 1) + 1) / 7),
+        label: String(n.cityName || n.handle || '').slice(0, 14),
+      }))
+    : [
+        { key: 0, mag: 0.5, label: '' },
+        { key: 1, mag: 0.5, label: '' },
+        { key: 2, mag: 0.5, label: '' },
+      ]
+  const nTowns = towns.length
+  towns.forEach((t, s) => {
+    const ang = (0.16 + (nTowns > 1 ? s / (nTowns - 1) : 0) * 0.68) * Math.PI
+    const px = ox + Math.cos(ang) * ew * 0.92
+    const py = gcy - eh * (0.44 + sr(t.key + 11, 29) * 0.26)
+    const count = 3 + Math.round(t.mag * 5)
+    let minx = px
+    let maxx = px
+    ctx.fillStyle = rgba(mix(shade(p.roof, -4), p.sky, 0.42), 0.5) // atmospheric haze: recedes toward the sky
+    for (let k = 0; k < count; k++) {
+      const bx = px + (sr(t.key * 7 + k, 31) - 0.5) * (16 + t.mag * 24)
+      const bh = 3 + Math.floor(sr(t.key * 7 + k, 37) * (5 + t.mag * 9))
       ctx.fillRect(bx, py - bh, 3, bh)
+      if (bx < minx) minx = bx
+      if (bx + 3 > maxx) maxx = bx + 3
     }
-  }
+    if (t.label) {
+      ctx.font = '9px ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = rgba(mix(p.roof, p.sky, 0.2), 0.82)
+      const lx = Math.max(48, Math.min(LOGICAL_W - 48, (minx + maxx) / 2)) // keep an edge-town's centred label on-canvas
+      ctx.fillText(t.label, lx, py + 11)
+      ctx.textAlign = 'left'
+    }
+  })
 }
 
 // Cast shadow for a building: the sun is upper-left, so the shadow is the base footprint swept down-right,
