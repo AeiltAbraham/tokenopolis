@@ -11,6 +11,9 @@
 
 export const HISTORY_CAP = 60 // headlines kept; the oldest fall off the tail (the log is newest-first)
 
+// Leading emoji per event type, used when an event carries a pre-written `line` (a resident vignette).
+const TYPE_ICON = { act: '🎉', scale: '🏙️', milestone: '🏆', gift: '🎁', singularity: '⚡', downfall: '☢️', rebirth: '🌅', pyromid: '⬛', ruin: '🧟', recovery: '🌱', vignette: '🗞️' }
+
 // Prepend `event` and return a NEW array (the input is never mutated), newest-first, capped at `cap`.
 // A non-finite cap falls back to HISTORY_CAP so a bad call can never silently wipe the whole log.
 export function appendEvent(history, event, cap = HISTORY_CAP) {
@@ -23,6 +26,11 @@ export function appendEvent(history, event, cap = HISTORY_CAP) {
 // the specific noun (the act name, the scale tier reached, …). Never throws on a malformed event.
 export function formatEvent(event) {
   const label = typeof event?.label === 'string' ? event.label : ''
+  // A resident-voiced vignette line (when present) is the whole headline, behind the type's emoji.
+  if (typeof event?.line === 'string' && event.line) {
+    const icon = event?.kind === 'disaster' ? '💥' : TYPE_ICON[event?.type] ?? '📜'
+    return `${icon} ${event.line}`
+  }
   switch (event?.type) {
     case 'act':
       return event.kind === 'disaster' ? `💥 ${label} struck` : `🎉 ${label} lifted the city`

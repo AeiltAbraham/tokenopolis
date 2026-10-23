@@ -402,3 +402,30 @@ review (workflow w7z12vup5; lenses: guards/determinism, window-slant correctness
 **0 findings**. Verified across all 11 themes: the naturalistic ones (coastal/temperate/nordic/solarpunk/
 desert/ascension) look genuinely cozy. **OWED follow-up:** the bold themes (cyberpunk/neon/crt) still have
 vivid-green grounds — per-theme ground desaturation needed there. Version → 1.6.0.
+
+## 2026-10-23 — Named residents + living chronicle ("Tokenopolis Times") (v1.7.0)
+
+First of two features the user asked to "run" (chronicle, then the region). Specs: chronicle/spec.md,
+region/spec.md (committed cdfd9f5). Gives the city a cast + a dated story feed, all deterministic + offline
+(no runtime AI/network), built on the existing history.js event log.
+
+- **`src/residents.js` (new, PURE):** `residentsFor(citySeed, scaleIndex, sourceMix)` → a seeded cast
+  (2..10, unique names, district split by sourceMix = Claude-Code "tech" vs agent "ops"); `vignette(type,
+  ctx, residents, seed)` → a resident-voiced headline or null; `ambientVignette(residents, seed)`.
+- **`src/history.js`:** events may carry an optional `line`; `formatEvent` renders `${icon} ${line}` when
+  present (icon by type/kind), else the existing templated headline. Backward-compatible.
+- **`src/tick.js` advance():** residents + sourceMix computed; an `ev(type,label,ctx,salt)` helper flavours
+  each chronicle event with a vignette while keeping the original `label` (so type/label assertions + the
+  data stay stable). One ambient line on a **quiet** day rollover — gated on `history === history0`
+  (reference identity, NOT length: at the 60-cap, length is unchanged, which false-fired the ambient on top
+  of the rebirth headline — the bug caught + fixed) AND `day > prevDay` (from prev.render.lastRenderedAt).
+- **`src/artifact.js`:** `cityData` adds `chronicle` (last 24 `{line, when}`) + `residents` (4); `whenLabel`
+  dates each entry (keeper-local); the HUD "Chronicle" panel became **"Tokenopolis Times"** with a residents
+  strip + dated, scrollable entries; `applyLive` live-updates `#chron` via textContent (XSS-safe).
+
+Decisions (spec open questions): residents seeded by citySeed (stable cast), size `2+scaleIndex` cap 10;
+Times panel upgraded in place; vignettes nod to the district; ~4 notable residents; one ambient line/day.
+Suite 199/199 (195 + 4 residents tests). **Mutation-checked:** name-uniqueness (all names identical → RED)
++ district-skew (flip the comparison → RED), both reverted → green. Verified live on the keeper: the Times
+panel shows the cast (Nina/Dag/Rosa/Theo, all tech since the city is 100% Tech) + dated chronicle; new events
+get vignettes going forward. Adversarial review (workflow w509rgu0y) pending at write time. Version → 1.7.0.

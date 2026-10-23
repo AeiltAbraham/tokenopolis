@@ -18,6 +18,7 @@ import { achievementsFor, streakFor } from './progress.js'
 import { dayOf, unlockedGrants, GIFTS } from './gifts.js'
 import { boostFor, loreFor, defaultPyromid, PYROMID_LORE } from './pyromid.js'
 import { formatEvent, summarize } from './history.js'
+import { residentsFor } from './residents.js'
 import { DEFAULT_CONFIG } from './config.js'
 
 const LEGENDARY_IDS = new Set(LEGENDARY.map((l) => l.id))
@@ -37,6 +38,14 @@ function renderBundle() {
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const fmt = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+// Short "when" for a chronicle entry: today → HH:MM, otherwise → "Mon D" (the keeper's local time).
+const whenLabel = (at, nowIso) => {
+  const t = Date.parse(at)
+  if (!Number.isFinite(t)) return ''
+  const d = new Date(t), n = Date.parse(nowIso)
+  const sameDay = Number.isFinite(n) && new Date(n).toDateString() === d.toDateString()
+  return sameDay ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
 
 // The pure data model embedded in the artifact AND served by the live /state endpoint — ONE source of
 // truth, so the polling page re-renders in place with exactly what a full render would show.
@@ -109,6 +118,8 @@ export function cityData(state, config = DEFAULT_CONFIG, env = getCachedGeoWeath
     achievements: achievementsFor(state),
     streak: streakFor(state, nowIso),
     historyLines: (Array.isArray(state.history) ? state.history : []).slice(0, 8).map(formatEvent),
+    chronicle: (Array.isArray(state.history) ? state.history : []).slice(0, 24).map((e) => ({ line: formatEvent(e), when: whenLabel(e.at, nowIso) })),
+    residents: residentsFor(state.citySeed, sim.scaleIndex ?? 0, sourceMix).slice(0, 4),
     tally: summarize(Array.isArray(state.history) ? state.history : []),
     sourceMix,
     districts: config.districts ?? { tech: 'Tech', ops: 'Industry' },
@@ -133,7 +144,7 @@ export function cityData(state, config = DEFAULT_CONFIG, env = getCachedGeoWeath
 
 export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCachedGeoWeather()) {
   const data = cityData(state, config, env)
-  const { readout, achievements, streak, historyLines, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift, era, climax, pyromid } = data
+  const { readout, achievements, streak, historyLines, chronicle, residents, tally, sourceMix, districts, flag, infection, day, giftCount, giftTotal, lastGift, era, climax, pyromid } = data
   const pyroPct = Math.round((pyromid?.progress ?? 0) * 100)
   const near = readout.locationCity ? ` near ${esc(readout.locationCity)}` : '' // "Tokenopolis near <city>" when the viewer's city is known
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c') // safe inside <script type=application/json>
@@ -245,9 +256,12 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCache
   .badges { display: flex; flex-wrap: wrap; gap: 4px; }
   .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.03); opacity: .42; }
   .badge.on { opacity: 1; color: #8fe3a8; border-color: rgba(143,227,168,.4); background: rgba(143,227,168,.08); }
-  .chron { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow: auto; font-size: 12px; }
+  .chron { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow: auto; font-size: 12px; }
   .chron li { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
   .chron li.muted { opacity: .5; border: 0; }
+  .chron .when { opacity: .5; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  .residents { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 9px; }
+  .resident { font-size: 11px; background: rgba(255,255,255,.06); border-radius: 10px; padding: 2px 9px; }
   .choice-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(6,8,14,.72); backdrop-filter: blur(3px); border-radius: 12px; z-index: 5; }
   .choice-overlay[hidden] { display: none; }
   .choice-box { width: 88%; max-width: 440px; text-align: center; }
@@ -327,9 +341,10 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCache
       .join('')}</div>
   </section>
   <section class="panel">
-    <h2>Chronicle <span class="muted">${tally.acts} acts · ${tally.disasters} disasters</span></h2>
-    <ul class="chron">${
-      historyLines.length ? historyLines.map((l) => `<li>${esc(l)}</li>`).join('') : '<li class="muted">nothing yet — roll an act</li>'
+    <h2>Tokenopolis Times <span class="muted">${tally.acts} acts · ${tally.disasters} disasters</span></h2>
+    ${residents && residents.length ? `<div class="residents">${residents.map((r) => `<span class="resident">${esc(r.name)}<span class="muted"> · ${esc(r.archetype)}</span></span>`).join('')}</div>` : ''}
+    <ul class="chron" id="chron">${
+      chronicle && chronicle.length ? chronicle.map((c) => `<li><span class="when">${esc(c.when)}</span>${esc(c.line)}</li>`).join('') : '<li class="muted">nothing yet — roll an act</li>'
     }</ul>
   </section>
   <div class="theme" id="themecap">theme: ${esc(readout.theme)}</div>
@@ -816,6 +831,12 @@ export function buildArtifactHtml(state, config = DEFAULT_CONFIG, env = getCache
     if (s.readout.locationCity == null && prev.locationCity != null) s.readout.locationCity = prev.locationCity;
     if (s.readout.weather == null && prev.weather != null) { s.readout.weather = prev.weather; s.readout.tempC = prev.tempC; }
     DATA.scene = s.scene; DATA.readout = s.readout; // the rAF loop redraws DATA.scene automatically
+    var chron = document.getElementById('chron'); // the Tokenopolis Times updates live (textContent → safe)
+    if (chron && Array.isArray(s.chronicle)) {
+      chron.innerHTML = '';
+      if (!s.chronicle.length) { var em = document.createElement('li'); em.className = 'muted'; em.textContent = 'nothing yet — roll an act'; chron.appendChild(em); }
+      else s.chronicle.forEach(function (c) { var li = document.createElement('li'); var w = document.createElement('span'); w.className = 'when'; w.textContent = c.when || ''; li.appendChild(w); li.appendChild(document.createTextNode(c.line || '')); chron.appendChild(li); });
+    }
     if (typeof s.lastActAt !== 'undefined') DATA.lastActAt = s.lastActAt;
     // Keep the headline + tab title in sync with the resolved city — the "near <city>" suffix is otherwise
     // baked only at build time, so a tab opened before geolocation resolved would never gain it.

@@ -14,6 +14,7 @@ import { dayOf, claimGiftsUpTo, defaultGifts } from './gifts.js'
 import { updatePyromid, newlyUnlocked, defaultPyromid } from './pyromid.js'
 import { treasuryFor } from './sim/economy.js'
 import { appendEvent } from './history.js'
+import { residentsFor, vignette, ambientVignette } from './residents.js'
 import { notifyAchievements } from './notify.js'
 
 export function advance(prev, stats, now, claudeDelta = 0) {
@@ -26,6 +27,17 @@ export function advance(prev, stats, now, claudeDelta = 0) {
     now,
   )
   let history = prev.history ?? []
+  // Named residents voice the chronicle: a deterministic cast (seeded by citySeed, sized to the city) and
+  // a per-transition vignette. `ev` flavours an event's headline with a resident line when one exists; the
+  // event's `label` is left intact (so type/label assertions + the data stay stable). Pure: `now` is passed.
+  const history0 = history // the untouched log; if any append reassigns `history`, we chronicled something
+  const sourceMix = afterStats.sim.builtTokens > 0 ? Math.max(0, Math.min(1, (afterStats.claude?.cumulativeTokens ?? 0) / afterStats.sim.builtTokens)) : 0.5
+  const residents = residentsFor(prev.citySeed, newSim.scaleIndex, sourceMix)
+  const vseed = (Date.parse(now) >>> 0) || 1
+  const ev = (type, label, ctx, salt = 0) => {
+    const line = vignette(type, ctx, residents, (vseed ^ Math.imul(salt + 1, 0x9e3779b1)) >>> 0)
+    return line ? { at: now, type, label, line } : { at: now, type, label }
+  }
   // The Day-60 Singularity → Fallout: the climax is the headline, so the normal decay/scale lines are
   // suppressed on the transition tick. A single tick that jumps past both days chronicles both climax lines.
   const fromEra = prev.sim?.era ?? 'build'
@@ -40,12 +52,12 @@ export function advance(prev, stats, now, claudeDelta = 0) {
   } else {
     // Normal build-era chronicle: scale-ups (one per level crossed) + ruin onset/clear + outbreak cleared.
     const oldScale = prev.sim?.scaleIndex ?? 0
-    for (let i = oldScale + 1; i <= newSim.scaleIndex; i++) history = appendEvent(history, { at: now, type: 'scale', label: scaleName(i) })
+    for (let i = oldScale + 1; i <= newSim.scaleIndex; i++) history = appendEvent(history, ev('scale', scaleName(i), scaleName(i), i))
     const oldRuin = prev.sim?.ruinProgress ?? 0
-    if (oldRuin === 0 && newSim.ruinProgress > 0) history = appendEvent(history, { at: now, type: 'ruin', label: 'Ruins' })
-    else if (oldRuin > 0 && newSim.ruinProgress === 0) history = appendEvent(history, { at: now, type: 'recovery', label: scaleName(newSim.scaleIndex) })
+    if (oldRuin === 0 && newSim.ruinProgress > 0) history = appendEvent(history, ev('ruin', 'Ruins', null, 0))
+    else if (oldRuin > 0 && newSim.ruinProgress === 0) history = appendEvent(history, ev('recovery', scaleName(newSim.scaleIndex), scaleName(newSim.scaleIndex), 1))
     const oldInf = prev.sim?.infection?.severity ?? 0
-    if (oldInf > 0 && (newSim.infection?.severity ?? 0) === 0) history = appendEvent(history, { at: now, type: 'milestone', label: 'Outbreak contained' })
+    if (oldInf > 0 && (newSim.infection?.severity ?? 0) === 0) history = appendEvent(history, ev('milestone', 'Outbreak contained', 'Outbreak contained', 2))
   }
   // Daily gifts: one per day of the current cycle (clamped to the 59-gift catalog; Day 60 is the climax).
   // Rebirth re-arms the calendar — earned gifts persist as blueprints and their daily banners replay.
@@ -57,7 +69,7 @@ export function advance(prev, stats, now, claudeDelta = 0) {
   } else {
     const claim = claimGiftsUpTo(gifts, day)
     gifts = claim.gifts
-    for (const g of claim.claimed) history = appendEvent(history, { at: now, type: 'gift', label: `Day ${g.day}: ${g.name}` })
+    for (const g of claim.claimed) history = appendEvent(history, ev('gift', `Day ${g.day}: ${g.name}`, g.name, g.day))
     if (claim.claimed.length) gifts = { ...gifts, last: { ...gifts.last, at: now } }
   }
   // The Pyromid: build it from the current treasury (which already includes its click bonus), high-water,
@@ -68,9 +80,15 @@ export function advance(prev, stats, now, claudeDelta = 0) {
   // The climax lines go in LAST so they stay newest-first — the headline sits atop the chronicle and a
   // big gift catch-up (Day 4 → Day 61 in one tick) can never bury or cap them out.
   if (climaxHappened) {
-    if (fromEra === 'build') history = appendEvent(history, { at: now, type: 'singularity', label: 'AI Reached Consciousness' })
-    if (toEra === 'fallout') history = appendEvent(history, { at: now, type: 'downfall', label: 'Nuclear Downfall' })
-    if (rebirthHappened) history = appendEvent(history, { at: now, type: 'rebirth', label: 'The City Reborn' })
+    if (fromEra === 'build') history = appendEvent(history, ev('singularity', 'AI Reached Consciousness', 'the Singularity', 5))
+    if (toEra === 'fallout') history = appendEvent(history, ev('downfall', 'Nuclear Downfall', 'the ash', 6))
+    if (rebirthHappened) history = appendEvent(history, ev('rebirth', 'The City Reborn', 'the new city', 7))
+  }
+  // A quiet day (nothing else chronicled) still breathes: one ambient resident line on a day rollover.
+  const prevDay = dayOf(cycleStart, prev.render?.lastRenderedAt ?? cycleStart)
+  if (history === history0 && day > prevDay) {
+    const line = ambientVignette(residents, (vseed ^ Math.imul(day + 1, 0x85ebca6b)) >>> 0)
+    if (line) history = appendEvent(history, { at: now, type: 'vignette', label: line, line })
   }
   const progress = updateProgress({ ...afterStats, sim: newSim, history, progress: prev.progress }, now)
   return { ...afterStats, sim: newSim, history, progress, gifts, pyromid, climax, cycleStartAt }
