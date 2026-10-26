@@ -83,16 +83,19 @@ export function saveState(dir, state) {
   writeFileSync(statePath(dir), JSON.stringify(state, null, 2), { mode: 0o600 })
 }
 
-// Pure. Accumulates the Claude burn delta, refreshes the cornercase stats block, and clamps
-// builtTokens monotonic. builtTokens = (cornercase lifetime − baseline) + Claude-since-install — the
-// two sources summed. stats === null AND no Claude delta → state returned unchanged (hold). Never throws.
+// Pure. Accumulates the Claude burn delta, refreshes the cornercase stats block, and grows builtTokens
+// by what each source added since the last read: the cornercase lifetime's rise since lastLifetimeTokens
+// (the install baseline before the first read) plus the Claude delta. Deltas, not lifetime − baseline, so
+// a lifetime that changes scale (0.3.1 stopped counting cache reads; a reset stats file) never stalls the
+// city: the read that drops adds nothing and growth resumes on the next one. Monotonic by construction.
+// stats === null AND no Claude delta → state returned unchanged (hold). Never throws.
 export function applyStatsRead(state, stats, claudeDelta = 0) {
   const added = Math.max(0, Number(claudeDelta) || 0)
   if (!stats && added === 0) return state
   const claudeCumulative = (state.claude?.cumulativeTokens ?? 0) + added
-  const lifetime = stats ? stats.lifetimeTotal : state.stats.lastLifetimeTokens
-  const cornercaseBurn = Math.max(0, lifetime - state.install.baselineLifetimeTokens)
-  const builtTokens = Math.max(state.sim.builtTokens, cornercaseBurn + claudeCumulative, 0)
+  const previous = state.stats?.lastLifetimeTokens ?? state.install.baselineLifetimeTokens
+  const cornercaseDelta = stats ? Math.max(0, (Number(stats.lifetimeTotal) || 0) - (Number(previous) || 0)) : 0
+  const builtTokens = Math.max(0, (state.sim.builtTokens ?? 0) + cornercaseDelta + added)
   return {
     ...state,
     claude: { ...(state.claude ?? {}), cumulativeTokens: claudeCumulative },
