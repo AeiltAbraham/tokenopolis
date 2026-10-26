@@ -25,7 +25,7 @@ test('save/load round-trips the full shape', () => {
   assert.deepEqual(loadState(dir), s)
 })
 
-test('applyStatsRead: builtTokens = lifetime − baseline, clamped monotonic', () => {
+test('applyStatsRead: builtTokens grows by the lifetime\'s rise since the last read, never shrinks', () => {
   const s0 = initState({ baselineLifetimeTokens: 1_000_000, installedAt: '2026-10-19T00:00:00.000Z', citySeed: 1 })
   const s1 = applyStatsRead(s0, { lifetimeTotal: 1_500_000, burn24h: 10, burn7d: 20, readAt: 't1' })
   assert.equal(s1.sim.builtTokens, 500_000)
@@ -33,9 +33,9 @@ test('applyStatsRead: builtTokens = lifetime − baseline, clamped monotonic', (
   // A regressed lifetime (stats hiccup) must NOT shrink builtTokens.
   const s2 = applyStatsRead(s1, { lifetimeTotal: 1_100_000, burn24h: 0, burn7d: 0, readAt: 't2' })
   assert.equal(s2.sim.builtTokens, 500_000)
-  // Growth resumes.
+  // Growth resumes from the regressed value: what was burned since that read counts.
   const s3 = applyStatsRead(s2, { lifetimeTotal: 3_000_000, burn24h: 0, burn7d: 0, readAt: 't3' })
-  assert.equal(s3.sim.builtTokens, 2_000_000)
+  assert.equal(s3.sim.builtTokens, 2_400_000)
 })
 
 test('applyStatsRead(null): sim and stats blocks unchanged (hold last-known)', () => {
@@ -61,4 +61,23 @@ test('logLine appends timestamped lines and never throws', () => {
   const dir = tmp()
   logLine(dir, 'hello', () => '2026-10-19T00:00:00.000Z')
   assert.match(readFileSync(join(dir, 'plugin.log'), 'utf8'), /2026-10-19T00:00:00\.000Z hello/)
+})
+
+test('applyStatsRead: a lifetime that changes scale (cache reads dropped) keeps growing the city', () => {
+  // A 0.1.0 install: baseline and builtTokens were taken while lifetime still counted cache reads.
+  const old = initState({ baselineLifetimeTokens: 4_306_093_697, installedAt: '2026-10-20T11:55:56.848Z', citySeed: 1 })
+  const before = { ...old, sim: { ...old.sim, builtTokens: 385_556_438 }, stats: { ...old.stats, lastLifetimeTokens: 188_571_747 } }
+  // From here lifetime excludes cache reads, so it sits far below the baseline but still grows.
+  const after = applyStatsRead(before, { lifetimeTotal: 249_848_985, burn24h: 0, burn7d: 0, readAt: 't1' })
+  assert.equal(after.sim.builtTokens, 385_556_438 + (249_848_985 - 188_571_747))
+})
+
+test('applyStatsRead: the read that switches metric adds nothing, and growth resumes after it', () => {
+  const s0 = initState({ baselineLifetimeTokens: 1_000_000, installedAt: 'x', citySeed: 1 })
+  const s1 = applyStatsRead(s0, { lifetimeTotal: 5_000_000, burn24h: 0, burn7d: 0, readAt: 't1' })
+  assert.equal(s1.sim.builtTokens, 4_000_000)
+  const switched = applyStatsRead(s1, { lifetimeTotal: 300_000, burn24h: 0, burn7d: 0, readAt: 't2' })
+  assert.equal(switched.sim.builtTokens, 4_000_000)
+  const grown = applyStatsRead(switched, { lifetimeTotal: 800_000, burn24h: 0, burn7d: 0, readAt: 't3' })
+  assert.equal(grown.sim.builtTokens, 4_500_000)
 })
